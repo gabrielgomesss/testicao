@@ -10,6 +10,8 @@ export const ViewAluno = {
     leiturasCompletasConsecutivas: 0,
     ultimaQuantidadeCacheada: 0,
     ultimaQuantidadeTotal: 0,
+    progressoCacheSW: null,
+    ultimoProgressoRecebidoEm: 0,
 
     template: `
         <div class="dashboard-container" style="background: #000000; min-height: 100vh; display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; box-sizing: border-box;">
@@ -77,6 +79,9 @@ export const ViewAluno = {
                                 <span id="dashboard-cache-icon">⚠️</span>
                                 <span id="dashboard-cache-text">Prova online indisponível</span>
                             </div>
+                            <div id="dashboard-cache-progress-wrap" style="display:none;width:100%;max-width:230px;height:6px;background:#e5e7eb;border-radius:999px;margin:-8px auto 16px auto;overflow:hidden;">
+                                <div id="dashboard-cache-progress-bar" style="width:0%;height:100%;background:#00a8cc;border-radius:999px;transition:width .25s ease;"></div>
+                            </div>
                         </div>
 
                         <button id="btn-iniciar-simulado" style="background: #00a8cc; color: #ffffff; border: none; padding: 15px; border-radius: 10px; font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; width: 100%; transition: background 0.2s ease; box-shadow: 0 4px 15px rgba(0, 168, 204, 0.3);">
@@ -104,6 +109,7 @@ export const ViewAluno = {
         }
 
         this.injetarCSSStatusCache();
+        this.vincularProgressoServiceWorker();
         this.atualizarStatusOffline();
 
         if (this.intervaloStatusOffline) clearInterval(this.intervaloStatusOffline);
@@ -114,7 +120,7 @@ export const ViewAluno = {
             if (!this.cacheOfflineConfirmado) {
                 this.atualizarStatusOffline();
             }
-        }, 6000);
+        }, 1500);
 
         const btnProfile = document.getElementById('btn-profile-trigger');
         const dropdownMenu = document.getElementById('dropdown-profile-menu');
@@ -336,11 +342,13 @@ export const ViewAluno = {
         return cacheadas;
     },
 
-    definirPill({ estado, texto, detalhe = '' }) {
+    definirPill({ estado, texto, detalhe = '', progresso = null }) {
         const statusMenu = document.getElementById('aluno-cache-status');
         const pill = document.getElementById('dashboard-cache-pill');
         const icon = document.getElementById('dashboard-cache-icon');
         const text = document.getElementById('dashboard-cache-text');
+        const progressWrap = document.getElementById('dashboard-cache-progress-wrap');
+        const progressBar = document.getElementById('dashboard-cache-progress-bar');
 
         const estados = {
             pronto: {
@@ -384,7 +392,76 @@ export const ViewAluno = {
             statusMenu.innerText = detalhe || texto;
             statusMenu.style.color = config.cor;
         }
+
+        if (progressWrap && progressBar) {
+            const deveExibir = progresso && Number(progresso.total || 0) > 0 && estado === 'baixando';
+            progressWrap.style.display = deveExibir ? 'block' : 'none';
+
+            if (deveExibir) {
+                const total = Math.max(Number(progresso.total || 0), 1);
+                const cacheados = Math.max(Number(progresso.cacheados || 0), 0);
+                const percentual = Math.min(100, Math.round((cacheados / total) * 100));
+                progressBar.style.width = `${percentual}%`;
+            } else {
+                progressBar.style.width = estado === 'pronto' ? '100%' : '0%';
+            }
+        }
     },
+
+    vincularProgressoServiceWorker() {
+        if (!('serviceWorker' in navigator) || this.listenerProgressoSWConfigurado) return;
+
+        this.listenerProgressoSWConfigurado = true;
+
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            const data = event.data || {};
+
+            if (data.type !== 'CACHE_PROGRESS') return;
+
+            const total = Number(data.total || 0);
+            const cacheados = Number(data.cacheados || 0);
+            const processados = Number(data.processados || 0);
+            const falhas = Number(data.falhas || 0);
+            const concluido = data.concluido === true;
+
+            this.progressoCacheSW = {
+                total,
+                cacheados,
+                processados,
+                falhas,
+                concluido
+            };
+            this.ultimoProgressoRecebidoEm = Date.now();
+
+            if (total <= 0) return;
+
+            if (!concluido || cacheados < total) {
+                this.cacheOfflineConfirmado = false;
+                this.leiturasCompletasConsecutivas = 0;
+                this.definirPill({
+                    estado: 'baixando',
+                    texto: `Baixando prova offline ${cacheados}/${total}`,
+                    detalhe: falhas > 0
+                        ? `Baixados ${cacheados}/${total}. Falhas temporárias: ${falhas}.`
+                        : `Baixando arquivos: ${cacheados}/${total}`,
+                    progresso: this.progressoCacheSW
+                });
+                return;
+            }
+
+            this.definirPill({
+                estado: 'baixando',
+                texto: `Finalizando cache ${cacheados}/${total}`,
+                detalhe: `Arquivos baixados: ${cacheados}/${total}`,
+                progresso: this.progressoCacheSW
+            });
+
+            // Confirma logo depois pelo leitor local do Cache Storage.
+            setTimeout(() => this.atualizarStatusOffline(), 350);
+        });
+    },
+
+    salvarConfirmacaoCacheOffline
 
     salvarConfirmacaoCacheOffline(meta = {}) {
         try {
@@ -538,8 +615,9 @@ export const ViewAluno = {
                 if (navigator.onLine) {
                     this.definirPill({
                         estado: 'baixando',
-                        texto: 'Baixando prova offline',
-                        detalhe: `Finalizando cache offline: ${midiasCacheadas}/${totalMidias}`
+                        texto: `Finalizando cache ${midiasCacheadas}/${totalMidias}`,
+                        detalhe: `Finalizando cache offline: ${midiasCacheadas}/${totalMidias}`,
+                        progresso: { cacheados: midiasCacheadas, total: totalMidias }
                     });
                     return;
                 }

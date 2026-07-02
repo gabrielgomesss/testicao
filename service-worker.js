@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.07.01.002';
+const APP_VERSION = '2026.07.02.001';
 const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = `chiteroicao-dynamic-${APP_VERSION}`;
 const OFFLINE_FALLBACK = './index.html';
@@ -69,12 +69,100 @@ function mesmaMidiaFirebase(urlA, urlB) {
   }
 }
 
+async function notificarClientes(payload) {
+  try {
+    const clientsList = await self.clients.matchAll({
+      includeUncontrolled: true,
+      type: 'window'
+    });
+
+    clientsList.forEach((client) => {
+      try {
+        client.postMessage(payload);
+      } catch {
+        // ignora cliente indisponível
+      }
+    });
+  } catch (erro) {
+    console.warn('⚠️ SW: não foi possível notificar progresso.', erro);
+  }
+}
+
+async function jaExisteNoCache(cache, url) {
+  try {
+    const direto = await cache.match(url, { ignoreSearch: false, ignoreVary: true });
+    if (direto) return true;
+
+    const semQuery = await cache.match(url, { ignoreSearch: true, ignoreVary: true });
+    if (semQuery) return true;
+
+    const requestKeys = await cache.keys();
+    const alvo = new URL(url, self.location.href);
+
+    return requestKeys.some((request) => {
+      try {
+        const reqUrl = new URL(request.url);
+
+        if (reqUrl.href === alvo.href) return true;
+        if (reqUrl.origin === alvo.origin && reqUrl.pathname === alvo.pathname) return true;
+
+        return isFirebaseStorageUrl(alvo.href) && mesmaMidiaFirebase(alvo.href, reqUrl.href);
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 async function cachearLista(cacheName, urls) {
   const cache = await caches.open(cacheName);
   const lista = Array.from(new Set((urls || []).map(normalizarUrlParaCache).filter(Boolean)));
+  const total = lista.length;
 
-  for (const url of lista) {
+  if (!total) {
+    await notificarClientes({
+      type: 'CACHE_PROGRESS',
+      cacheName,
+      total: 0,
+      processados: 0,
+      cacheados: 0,
+      falhas: 0,
+      concluido: true
+    });
+    return { total: 0, cacheados: 0, falhas: 0 };
+  }
+
+  let processados = 0;
+  let cacheados = 0;
+  let falhas = 0;
+
+  const emitirProgresso = async (urlAtual = '', status = 'andamento') => {
+    await notificarClientes({
+      type: 'CACHE_PROGRESS',
+      cacheName,
+      total,
+      processados,
+      cacheados,
+      falhas,
+      urlAtual,
+      status,
+      concluido: processados >= total
+    });
+  };
+
+  await emitirProgresso('', 'iniciando');
+
+  const cachearUm = async (url) => {
     try {
+      if (await jaExisteNoCache(cache, url)) {
+        cacheados += 1;
+        processados += 1;
+        await emitirProgresso(url, 'ja-cacheado');
+        return;
+      }
+
       const request = new Request(url, {
         method: 'GET',
         credentials: isFirebaseStorageUrl(url) ? 'omit' : 'same-origin',
@@ -91,14 +179,40 @@ async function cachearLista(cacheName, urls) {
         await cache.put(request, response.clone());
         await cache.put(url, response.clone());
 
+        cacheados += 1;
         console.log(`✅ SW: Cacheado: ${url}`);
       } else {
+        falhas += 1;
         console.warn(`⚠️ SW: Resposta não cacheada (${response?.status}): ${url}`);
       }
     } catch (e) {
+      falhas += 1;
       console.warn(`⚠️ SW: Arquivo pulado: ${url}`, e);
+    } finally {
+      processados += 1;
+      await emitirProgresso(url, 'andamento');
     }
-  }
+  };
+
+  // Limite de concorrência: melhora bastante o celular sem travar rede/memória.
+  const CONCORRENCIA = 4;
+  let cursor = 0;
+
+  const trabalhador = async () => {
+    while (cursor < lista.length) {
+      const indice = cursor;
+      cursor += 1;
+      await cachearUm(lista[indice]);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCORRENCIA, lista.length) }, () => trabalhador())
+  );
+
+  await emitirProgresso('', 'concluido');
+
+  return { total, cacheados, falhas };
 }
 
 async function limparCachesAntigos() {
