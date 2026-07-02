@@ -409,11 +409,13 @@ export const ViewAluno = {
     },
 
     vincularProgressoServiceWorker() {
-        if (this.listenerProgressoSWConfigurado) return;
+        if (!('serviceWorker' in navigator) || this.listenerProgressoSWConfigurado) return;
 
         this.listenerProgressoSWConfigurado = true;
 
-        const processarProgresso = (data = {}) => {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            const data = event.data || {};
+
             if (data.type !== 'CACHE_PROGRESS') return;
 
             const total = Number(data.total || 0);
@@ -421,15 +423,13 @@ export const ViewAluno = {
             const processados = Number(data.processados || 0);
             const falhas = Number(data.falhas || 0);
             const concluido = data.concluido === true;
-            const status = data.status || 'andamento';
 
             this.progressoCacheSW = {
                 total,
                 cacheados,
                 processados,
                 falhas,
-                concluido,
-                status
+                concluido
             };
             this.ultimoProgressoRecebidoEm = Date.now();
 
@@ -438,17 +438,12 @@ export const ViewAluno = {
             if (!concluido || cacheados < total) {
                 this.cacheOfflineConfirmado = false;
                 this.leiturasCompletasConsecutivas = 0;
-
-                const textoDetalhe = falhas > 0
-                    ? `Baixando ${cacheados}/${total}. Retentativa em ${falhas} arquivo(s).`
-                    : `Baixando arquivos: ${cacheados}/${total}`;
-
                 this.definirPill({
                     estado: 'baixando',
                     texto: `Baixando prova offline ${cacheados}/${total}`,
-                    detalhe: status === 'retentativa-final'
-                        ? `Refazendo arquivos pendentes: ${cacheados}/${total}`
-                        : textoDetalhe,
+                    detalhe: falhas > 0
+                        ? `Baixando ${cacheados}/${total}. Repetindo ${falhas} arquivo(s) ao final.`
+                        : `Baixando arquivos: ${cacheados}/${total}`,
                     progresso: this.progressoCacheSW
                 });
                 return;
@@ -457,24 +452,12 @@ export const ViewAluno = {
             this.definirPill({
                 estado: 'baixando',
                 texto: `Finalizando cache ${cacheados}/${total}`,
-                detalhe: falhas > 0
-                    ? `Cache finalizado com ${falhas} falha(s). Conferindo arquivos locais...`
-                    : `Arquivos baixados: ${cacheados}/${total}`,
+                detalhe: `Arquivos baixados: ${cacheados}/${total}`,
                 progresso: this.progressoCacheSW
             });
 
             // Confirma logo depois pelo leitor local do Cache Storage.
             setTimeout(() => this.atualizarStatusOffline(), 350);
-        };
-
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.addEventListener('message', (event) => {
-                processarProgresso(event.data || {});
-            });
-        }
-
-        window.addEventListener('chiteroicao-cache-progress', (event) => {
-            processarProgresso(event.detail || {});
         });
     },
 
@@ -599,15 +582,10 @@ export const ViewAluno = {
                 this.leiturasCompletasConsecutivas = 0;
 
                 if (navigator.onLine) {
-                    const progressoRecente = this.progressoCacheSW && (Date.now() - this.ultimoProgressoRecebidoEm < 10000)
-                        ? this.progressoCacheSW
-                        : { cacheados: midiasCacheadas, total: totalMidias };
-
                     this.definirPill({
                         estado: 'baixando',
-                        texto: `Baixando prova offline ${progressoRecente.cacheados || midiasCacheadas}/${progressoRecente.total || totalMidias}`,
-                        detalhe: `Download em andamento: ${progressoRecente.cacheados || midiasCacheadas}/${progressoRecente.total || totalMidias}`,
-                        progresso: progressoRecente
+                        texto: 'Baixando prova offline',
+                        detalhe: `Download em andamento: ${midiasCacheadas}/${totalMidias}`
                     });
                     return;
                 }
