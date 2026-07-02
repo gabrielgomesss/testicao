@@ -461,8 +461,6 @@ export const ViewAluno = {
         });
     },
 
-    salvarConfirmacaoCacheOffline
-
     salvarConfirmacaoCacheOffline(meta = {}) {
         try {
             const payload = {
