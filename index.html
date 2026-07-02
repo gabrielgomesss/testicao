@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Configuração de viewport rígida para evitar zoom indesejado no iOS ao digitar -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simulador SDEA - ICAO</title>
+
+    <!-- Meta tags exclusivas para o funcionamento Standalone e persistente no iOS (Apple) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Simulador ICAO">
+    <link rel="apple-touch-icon" href="./assets/imagens/Logotipo.avif">
+
+    <!-- Vínculo com o Manifest do PWA -->
+    <link rel="manifest" href="./manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#0d1b2a">
+
+    <!-- Folha de estilo unificada -->
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+    <!-- O Container Raiz: Todo o nosso roteador injetará os blocos modulares aqui dentro -->
+    <div id="app">
+        <!-- O JS inicial injetará o bloco correspondente (Login, Admin ou Aluno) aqui -->
+    </div>
+
+    <!-- Ponto único de entrada da aplicação modular (JavaScript ES6 Type Module) -->
+    <script type="module" src="./js/app.js"></script>
+
+    <!-- Instalador PWA visual -->
+    <script src="./pwa-installer.js" defer></script>
+
+    <!-- Registro único do Service Worker com atualização automática -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            let recarregandoPorNovoSW = false;
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (recarregandoPorNovoSW) return;
+                recarregandoPorNovoSW = true;
+                console.log('Novo Service Worker assumiu o controle. Recarregando para aplicar a versão atualizada...');
+                window.location.reload();
+            });
+
+            window.addEventListener('load', async () => {
+                try {
+                    const registration = await navigator.serviceWorker.register('./service-worker.js', { scope: './', updateViaCache: 'none' });
+                    console.log('SW ativo no escopo:', registration.scope);
+
+                    // Verifica atualização ignorando cache HTTP do próprio SW.
+                    registration.update();
+
+                    document.addEventListener('visibilitychange', () => {
+                        if (!document.hidden) registration.update();
+                    });
+
+                    registration.addEventListener('updatefound', () => {
+                        const installingWorker = registration.installing;
+                        if (!installingWorker) return;
+
+                        installingWorker.addEventListener('statechange', () => {
+                            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                console.log('Nova versão disponível. Ativando imediatamente...');
+                                installingWorker.postMessage({ type: 'SKIP_WAITING' });
+                            }
+                        });
+                    });
+                } catch (error) {
+                    console.error('Erro crítico no registro do Service Worker:', error);
+                }
+            });
+        }
+    </script>
+
+    <script>
+(function () {
+    document.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+        return false;
+    });
+
+    document.addEventListener('keydown', function (e) {
+        const key = e.key.toLowerCase();
+
+        if (e.key === 'F12') {
+            e.preventDefault();
+            return false;
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'j', 'c'].includes(key)) {
+            e.preventDefault();
+            return false;
+        }
+
+        if ((e.ctrlKey || e.metaKey) && ['u', 's', 'p'].includes(key)) {
+            e.preventDefault();
+            return false;
+        }
+    });
+
+    setInterval(function () {
+        const largura = window.outerWidth - window.innerWidth;
+        const altura = window.outerHeight - window.innerHeight;
+
+        if (largura > 160 || altura > 160) {
+            document.body.innerHTML = '';
+            alert('Acesso ao painel de inspeção não permitido.');
+            window.location.href = 'index.html';
+        }
+    }, 1000);
+})();
+</script>
+</body>
+</html>

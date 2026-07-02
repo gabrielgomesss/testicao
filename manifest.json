@@ -1,0 +1,37 @@
+{
+  "id": "/",
+  "short_name": "Chiteroicao",
+  "name": "Chiteroicao - ICAO Simulator",
+  "description": "Simulador ICAO/SDEA offline-first para treinamento de pilotos.",
+  "icons": [
+    {
+      "src": "./assets/imagens/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/imagens/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/imagens/maskable-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "./index.html",
+  "scope": "./",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "lang": "pt-BR"
+}
