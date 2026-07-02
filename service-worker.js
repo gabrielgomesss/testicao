@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.07.02.005';
+const APP_VERSION = '2026.07.02.004';
 const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = `chiteroicao-dynamic-${APP_VERSION}`;
 const OFFLINE_FALLBACK = './index.html';
@@ -115,8 +115,81 @@ async function jaExisteNoCache(cache, url) {
   }
 }
 
+function isQuotaExceededError(erro) {
+  return erro
+    && (
+      erro.name === 'QuotaExceededError'
+      || String(erro.message || erro).toLowerCase().includes('quota')
+    );
+}
+
+async function limparCacheDinamicoPorQuota() {
+  try {
+    console.warn('🧹 SW: limpando cache dinâmico para liberar espaço offline.');
+    await caches.delete(DYNAMIC_CACHE_NAME);
+    await notificarClientes({
+      type: 'CACHE_PROGRESS',
+      status: 'limpando-quota',
+      mensagem: 'Liberando espaço para baixar a prova offline.',
+      total: 0,
+      processados: 0,
+      cacheados: 0,
+      falhas: 0,
+      concluido: false
+    });
+  } catch (erro) {
+    console.warn('⚠️ SW: falha ao limpar cache dinâmico por quota.', erro);
+  }
+}
+
+async function removerEntradasForaDaLista(cache, listaAlvo = []) {
+  try {
+    if (!cache || !Array.isArray(listaAlvo)) return;
+
+    const alvos = listaAlvo.map((url) => {
+      try {
+        const alvo = new URL(url, self.location.href);
+        return {
+          href: alvo.href,
+          origin: alvo.origin,
+          pathname: alvo.pathname,
+          firebase: isFirebaseStorageUrl(alvo.href)
+        };
+      } catch {
+        return null;
+      }
+    }).filter(Boolean);
+
+    if (!alvos.length) return;
+
+    const requests = await cache.keys();
+
+    for (const request of requests) {
+      let manter = false;
+
+      try {
+        const reqUrl = new URL(request.url);
+
+        manter = alvos.some((alvo) => {
+          if (request.url === alvo.href) return true;
+          if (reqUrl.origin === alvo.origin && reqUrl.pathname === alvo.pathname) return true;
+          return alvo.firebase && mesmaMidiaFirebase(alvo.href, request.url);
+        });
+      } catch {
+        manter = true;
+      }
+
+      if (!manter) {
+        await cache.delete(request);
+      }
+    }
+  } catch (erro) {
+    console.warn('⚠️ SW: não foi possível limpar entradas antigas do cache dinâmico.', erro);
+  }
+}
+
 async function cachearLista(cacheName, urls) {
-  const cache = await caches.open(cacheName);
+  let cache = await caches.open(cacheName);
   const lista = Array.from(new Set((urls || []).map(normalizarUrlParaCache).filter(Boolean)));
   const total = lista.length;
 
@@ -133,9 +206,14 @@ async function cachearLista(cacheName, urls) {
     return { total: 0, cacheados: 0, falhas: 0 };
   }
 
+  if (cacheName === DYNAMIC_CACHE_NAME) {
+    await removerEntradasForaDaLista(cache, lista);
+  }
+
   let processados = 0;
   let cacheados = 0;
   let falhas = 0;
+  let quotaJaLimpa = false;
 
   const emitirProgresso = async (urlAtual = '', status = 'andamento') => {
     await notificarClientes({
@@ -155,7 +233,7 @@ async function cachearLista(cacheName, urls) {
 
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const fetchComTimeout = async (request, timeoutMs = 45000) => {
+  const fetchComTimeout = async (request, timeoutMs = 60000) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -163,6 +241,34 @@ async function cachearLista(cacheName, urls) {
       return await fetch(request, { signal: controller.signal });
     } finally {
       clearTimeout(timer);
+    }
+  };
+
+  const criarRequest = (url) => {
+    const firebaseStorage = isFirebaseStorageUrl(url);
+
+    return new Request(url, {
+      method: 'GET',
+      credentials: firebaseStorage ? 'omit' : 'same-origin',
+      cache: 'reload',
+      mode: firebaseStorage ? 'no-cors' : 'same-origin'
+    });
+  };
+
+  const tentarCachearResposta = async (url, response) => {
+    try {
+      await cache.put(url, response.clone());
+      return true;
+    } catch (erroPut) {
+      if (isQuotaExceededError(erroPut) && cacheName === DYNAMIC_CACHE_NAME && !quotaJaLimpa) {
+        quotaJaLimpa = true;
+        await limparCacheDinamicoPorQuota();
+        cache = await caches.open(DYNAMIC_CACHE_NAME);
+        await cache.put(url, response.clone());
+        return true;
+      }
+
+      throw erroPut;
     }
   };
 
@@ -178,34 +284,20 @@ async function cachearLista(cacheName, urls) {
         return;
       }
 
-      const firebaseStorage = isFirebaseStorageUrl(url);
-      const request = new Request(url, {
-        method: 'GET',
-        credentials: firebaseStorage ? 'omit' : 'same-origin',
-        cache: 'reload',
-        // Firebase Storage pode bloquear CORS em produção.
-        // Para cache offline de mídia, usamos no-cors e aceitamos resposta opaque.
-        mode: firebaseStorage ? 'no-cors' : 'same-origin'
-      });
+      const request = criarRequest(url);
 
-      // Celulares costumam falhar quando muitos arquivos grandes são baixados em paralelo.
-      // Por isso fazemos retentativas com pausa progressiva antes de considerar falha real.
       for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
         try {
           if (tentativa > 1) {
             await emitirProgresso(url, `tentativa-${tentativa}`);
-            await esperar(900 * tentativa);
+            await esperar(1200 * tentativa);
           }
 
-          const response = await fetchComTimeout(request, 45000);
-
+          const response = await fetchComTimeout(request, 60000);
           const respostaOK = response && (response.status === 200 || response.type === 'opaque');
 
           if (respostaOK) {
-            // Em Firebase Storage com no-cors, a resposta vem como opaque.
-            // Ela não pode ser lida pelo JS, mas pode ser armazenada e servida offline pelo SW.
-            await cache.put(url, response.clone());
-
+            await tentarCachearResposta(url, response);
             cacheados += 1;
             sucesso = true;
             console.log(`✅ SW: Cacheado: ${url} (${response.type || response.status})`);
@@ -215,6 +307,12 @@ async function cachearLista(cacheName, urls) {
           ultimoErro = new Error(`Resposta ${response?.status || response?.type || 'sem status'}`);
         } catch (erroTentativa) {
           ultimoErro = erroTentativa;
+
+          if (isQuotaExceededError(erroTentativa)) {
+            console.warn(`⚠️ SW: quota excedida ao cachear: ${url}. O arquivo será pulado para manter o app funcional.`, erroTentativa);
+            break;
+          }
+
           console.warn(`⚠️ SW: tentativa ${tentativa}/3 falhou para: ${url}`, erroTentativa);
         }
       }
@@ -228,12 +326,18 @@ async function cachearLista(cacheName, urls) {
       console.warn(`⚠️ SW: Arquivo pulado: ${url}`, e);
     } finally {
       processados += 1;
-      await emitirProgresso(url, sucesso ? 'cacheado' : 'andamento');
+      await emitirProgresso(url, sucesso ? 'cacheado' : 'falha');
+
+      // Pausa curta entre downloads reduz pico de memória em celulares.
+      if (cacheName === DYNAMIC_CACHE_NAME) {
+        await esperar(180);
+      }
     }
   };
 
-  // Limite menor para mobile: evita saturar rede/memória e reduz falhas temporárias.
-  const CONCORRENCIA = 2;
+  // Download sequencial no cache dinâmico: mais lento que paralelo,
+  // mas muito mais estável em celular e evita picos que geram QuotaExceededError.
+  const CONCORRENCIA = cacheName === DYNAMIC_CACHE_NAME ? 1 : 2;
   let cursor = 0;
 
   const trabalhador = async () => {
