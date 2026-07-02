@@ -207,6 +207,222 @@ async function avisarServiceWorkerParaCachear(urls) {
     return { solicitadas: lista.length };
 }
 
+const CACHE_MIDIA_CLIENTE = 'chiteroicao-dynamic-midia-v1';
+
+function isFirebaseStorageUrl(url) {
+    try {
+        const u = new URL(url, window.location.href);
+        return u.hostname.includes('firebasestorage.googleapis.com') || u.hostname.includes('storage.googleapis.com');
+    } catch {
+        return false;
+    }
+}
+
+function mesmaMidiaPorPathname(urlA, urlB) {
+    try {
+        const a = new URL(urlA, window.location.href);
+        const b = new URL(urlB, window.location.href);
+
+        return a.origin === b.origin && a.pathname === b.pathname;
+    } catch {
+        return false;
+    }
+}
+
+function emitirProgressoCacheMidia(payload = {}) {
+    try {
+        window.dispatchEvent(new CustomEvent('chiteroicao-cache-progress', {
+            detail: payload
+        }));
+    } catch (erro) {
+        console.warn('Não foi possível emitir progresso do cache de mídia.', erro);
+    }
+}
+
+async function urlJaCacheadaEmQualquerCache(url) {
+    if (!('caches' in window)) return false;
+
+    try {
+        const nomes = await caches.keys();
+
+        for (const nome of nomes) {
+            const cache = await caches.open(nome);
+
+            const direto = await cache.match(url, { ignoreSearch: false, ignoreVary: true });
+            if (direto) return true;
+
+            const semQuery = await cache.match(url, { ignoreSearch: true, ignoreVary: true });
+            if (semQuery) return true;
+
+            const requestKeys = await cache.keys();
+            const encontrado = requestKeys.some((request) => {
+                if (request.url === url) return true;
+                return mesmaMidiaPorPathname(url, request.url);
+            });
+
+            if (encontrado) return true;
+        }
+    } catch (erro) {
+        console.warn('Falha ao verificar mídia no cache.', erro);
+    }
+
+    return false;
+}
+
+async function fetchComTimeout(url, timeoutMs = 65000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const request = new Request(url, {
+            method: 'GET',
+            credentials: isFirebaseStorageUrl(url) ? 'omit' : 'same-origin',
+            cache: 'reload',
+            mode: isFirebaseStorageUrl(url) ? 'cors' : 'same-origin',
+            signal: controller.signal
+        });
+
+        return await fetch(request);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function cachearMidiasNoCliente(urls = []) {
+    const lista = Array.from(new Set((urls || []).filter(Boolean)));
+    const total = lista.length;
+
+    if (!total) {
+        emitirProgressoCacheMidia({
+            type: 'CACHE_PROGRESS',
+            origem: 'cliente',
+            total: 0,
+            processados: 0,
+            cacheados: 0,
+            falhas: 0,
+            concluido: true
+        });
+        return { solicitadas: 0, cacheadas: 0, falhas: 0 };
+    }
+
+    if (!('caches' in window)) {
+        // Fallback para navegadores em que a Cache API do window não esteja disponível.
+        const resultadoSW = await avisarServiceWorkerParaCachear(lista);
+        return { solicitadas: resultadoSW.solicitadas, cacheadas: 0, falhas: 0, fallbackSW: true };
+    }
+
+    const cache = await caches.open(CACHE_MIDIA_CLIENTE);
+    const falharam = [];
+    let processados = 0;
+    let cacheados = 0;
+    let falhas = 0;
+
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    const CONCORRENCIA = isMobile ? 1 : 3;
+
+    const emitir = (extra = {}) => {
+        emitirProgressoCacheMidia({
+            type: 'CACHE_PROGRESS',
+            origem: 'cliente',
+            total,
+            processados,
+            cacheados,
+            falhas,
+            concluido: processados >= total && falharam.length === 0,
+            ...extra
+        });
+    };
+
+    emitir({ status: 'iniciando' });
+
+    async function baixarComRetentativa(url, rodada = 1) {
+        if (await urlJaCacheadaEmQualquerCache(url)) {
+            cacheados += 1;
+            processados += 1;
+            emitir({ status: 'ja-cacheado', urlAtual: url });
+            return true;
+        }
+
+        let ultimoErro = null;
+        const maxTentativas = rodada === 1 ? 3 : 2;
+
+        for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+            try {
+                emitir({ status: tentativa > 1 ? `tentativa-${tentativa}` : 'baixando', urlAtual: url });
+
+                const response = await fetchComTimeout(url, isMobile ? 90000 : 60000);
+
+                if (response && (response.ok || response.status === 200 || response.type === 'opaque')) {
+                    await cache.put(url, response.clone());
+                    cacheados += 1;
+                    processados += 1;
+                    emitir({ status: 'cacheado', urlAtual: url });
+                    return true;
+                }
+
+                ultimoErro = new Error(`Resposta HTTP ${response?.status || 'sem status'}`);
+            } catch (erro) {
+                ultimoErro = erro;
+                console.warn(`⚠️ Cache mídia tentativa ${tentativa}/${maxTentativas} falhou:`, url, erro);
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, isMobile ? 1200 * tentativa : 500 * tentativa));
+        }
+
+        console.warn('⚠️ Mídia falhou e será reenfileirada:', url, ultimoErro);
+        return false;
+    }
+
+    let cursor = 0;
+
+    async function worker() {
+        while (cursor < lista.length) {
+            const indexAtual = cursor;
+            cursor += 1;
+            const url = lista[indexAtual];
+
+            const ok = await baixarComRetentativa(url, 1);
+            if (!ok) {
+                falharam.push(url);
+                falhas += 1;
+                processados += 1;
+                emitir({ status: 'falha-temporaria', urlAtual: url });
+            }
+        }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(CONCORRENCIA, lista.length) }, () => worker()));
+
+    // Segunda rodada: tenta novamente apenas os que falharam, sem travar a fila principal.
+    if (falharam.length > 0 && navigator.onLine) {
+        const retryList = falharam.splice(0, falharam.length);
+        falhas = 0;
+        processados = Math.max(0, total - retryList.length);
+        emitir({ status: 'retentativa-final', urlAtual: '' });
+
+        for (const url of retryList) {
+            const ok = await baixarComRetentativa(url, 2);
+            if (!ok) {
+                falhas += 1;
+                processados += 1;
+                emitir({ status: 'falha-final', urlAtual: url });
+            }
+        }
+    }
+
+    emitir({
+        status: falhas > 0 ? 'concluido-com-falhas' : 'concluido',
+        concluido: true,
+        urlAtual: ''
+    });
+
+    return {
+        solicitadas: total,
+        cacheadas: cacheados,
+        falhas
+    };
+}
+
 async function salvarBancoNoCache(banco, modelo) {
     const urlsMidia = Array.from(coletarUrlsMidia(banco));
     const assinaturaAnterior = obterAssinaturaCacheAtual();
@@ -227,21 +443,25 @@ async function salvarBancoNoCache(banco, modelo) {
         localStorage.removeItem('chiteroicao_cache_offline_confirmado');
     }
 
-    const resultadoMidia = await avisarServiceWorkerParaCachear(urlsMidia);
+    const resultadoMidia = await cachearMidiasNoCliente(urlsMidia);
 
     console.log(`📦 Cache de provas salvo. Modelo: ${modelo}. Mudança detectada: ${houveMudanca ? 'sim' : 'não'}.`);
-    console.log(`🎧 Solicitação de cache de mídia enviada: ${resultadoMidia.solicitadas} item(ns).`);
+    console.log(`🎧 Cache de mídia executado: ${resultadoMidia.cacheadas || 0}/${resultadoMidia.solicitadas || urlsMidia.length}. Falhas: ${resultadoMidia.falhas || 0}.`);
 
     notificarAtualizacaoProvas({
         modelo,
         houveMudanca,
         totalMidias: urlsMidia.length,
-        midiasSolicitadas: resultadoMidia.solicitadas
+        midiasSolicitadas: resultadoMidia.solicitadas || urlsMidia.length,
+        midiasCacheadas: resultadoMidia.cacheadas || 0,
+        falhasMidia: resultadoMidia.falhas || 0
     });
 
     return {
         urlsMidia,
-        midiasSolicitadas: resultadoMidia.solicitadas,
+        midiasSolicitadas: resultadoMidia.solicitadas || urlsMidia.length,
+        midiasCacheadas: resultadoMidia.cacheadas || 0,
+        falhasMidia: resultadoMidia.falhas || 0,
         houveMudanca
     };
 }

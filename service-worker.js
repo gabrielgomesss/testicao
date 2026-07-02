@@ -1,6 +1,7 @@
-const APP_VERSION = '2026.07.02.002';
+const APP_VERSION = '2026.07.02.003';
 const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = `chiteroicao-dynamic-${APP_VERSION}`;
+const CLIENT_MEDIA_CACHE_PREFIX = 'chiteroicao-dynamic-midia';
 const OFFLINE_FALLBACK = './index.html';
 
 const ASSETS_TO_CACHE = [
@@ -137,8 +138,9 @@ async function cachearLista(cacheName, urls) {
   let processados = 0;
   let cacheados = 0;
   let falhas = 0;
+  const pendentesRetry = [];
 
-  const emitirProgresso = async (urlAtual = '', status = 'andamento') => {
+  const emitirProgresso = async (urlAtual = '', status = 'andamento', concluido = false) => {
     await notificarClientes({
       type: 'CACHE_PROGRESS',
       cacheName,
@@ -148,103 +150,111 @@ async function cachearLista(cacheName, urls) {
       falhas,
       urlAtual,
       status,
-      concluido: processados >= total
+      concluido
     });
   };
 
-  await emitirProgresso('', 'iniciando');
+  await emitirProgresso('', 'iniciando', false);
 
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const fetchComTimeout = async (request, timeoutMs = 45000) => {
+  const fetchComTimeout = async (url, timeoutMs = 70000) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      return await fetch(request, { signal: controller.signal });
+      const request = new Request(url, {
+        method: 'GET',
+        credentials: isFirebaseStorageUrl(url) ? 'omit' : 'same-origin',
+        cache: 'reload',
+        mode: isFirebaseStorageUrl(url) ? 'cors' : 'same-origin',
+        signal: controller.signal
+      });
+      return await fetch(request);
     } finally {
       clearTimeout(timer);
     }
   };
 
-  const cachearUm = async (url) => {
-    let sucesso = false;
+  const cachearUm = async (url, rodada = 1) => {
+    if (await jaExisteNoCache(cache, url)) {
+      cacheados += 1;
+      await emitirProgresso(url, 'ja-cacheado', false);
+      return true;
+    }
+
     let ultimoErro = null;
+    const maxTentativas = rodada === 1 ? 3 : 2;
 
-    try {
-      if (await jaExisteNoCache(cache, url)) {
-        cacheados += 1;
-        processados += 1;
-        await emitirProgresso(url, 'ja-cacheado');
-        return;
-      }
-
-      const request = new Request(url, {
-        method: 'GET',
-        credentials: isFirebaseStorageUrl(url) ? 'omit' : 'same-origin',
-        cache: 'default',
-        mode: isFirebaseStorageUrl(url) ? 'cors' : 'same-origin'
-      });
-
-      // Celulares costumam falhar quando muitos arquivos grandes são baixados em paralelo.
-      // Por isso fazemos retentativas com pausa progressiva antes de considerar falha real.
-      for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
-        try {
-          if (tentativa > 1) {
-            await emitirProgresso(url, `tentativa-${tentativa}`);
-            await esperar(900 * tentativa);
-          }
-
-          const response = await fetchComTimeout(request, 45000);
-
-          if (response && response.status === 200) {
-            // Em mobile, salvar duas cópias do mesmo arquivo pode consumir quota e memória.
-            // Salvamos pela URL string e o match posterior procura também por pathname/token.
-            await cache.put(url, response.clone());
-
-            cacheados += 1;
-            sucesso = true;
-            console.log(`✅ SW: Cacheado: ${url}`);
-            break;
-          }
-
-          ultimoErro = new Error(`Resposta ${response?.status || 'sem status'}`);
-        } catch (erroTentativa) {
-          ultimoErro = erroTentativa;
-          console.warn(`⚠️ SW: tentativa ${tentativa}/3 falhou para: ${url}`, erroTentativa);
+    for (let tentativa = 1; tentativa <= maxTentativas; tentativa += 1) {
+      try {
+        if (tentativa > 1) {
+          await emitirProgresso(url, `tentativa-${tentativa}`, false);
+          await esperar(900 * tentativa);
         }
-      }
 
-      if (!sucesso) {
-        falhas += 1;
-        console.warn(`⚠️ SW: Arquivo não cacheado após retentativas: ${url}`, ultimoErro);
+        const response = await fetchComTimeout(url, rodada === 1 ? 70000 : 90000);
+
+        if (response && (response.ok || response.status === 200 || response.type === 'opaque')) {
+          await cache.put(url, response.clone());
+          cacheados += 1;
+          console.log(`✅ SW: Cacheado: ${url}`);
+          await emitirProgresso(url, 'cacheado', false);
+          return true;
+        }
+
+        ultimoErro = new Error(`Resposta ${response?.status || 'sem status'}`);
+      } catch (erroTentativa) {
+        ultimoErro = erroTentativa;
+        console.warn(`⚠️ SW: tentativa ${tentativa}/${maxTentativas} falhou para: ${url}`, erroTentativa);
       }
-    } catch (e) {
-      falhas += 1;
-      console.warn(`⚠️ SW: Arquivo pulado: ${url}`, e);
-    } finally {
-      processados += 1;
-      await emitirProgresso(url, sucesso ? 'cacheado' : 'andamento');
     }
+
+    console.warn(`⚠️ SW: Arquivo pendente após retentativas: ${url}`, ultimoErro);
+    return false;
   };
 
-  // Limite menor para mobile: evita saturar rede/memória e reduz falhas temporárias.
-  const CONCORRENCIA = 2;
-  let cursor = 0;
+  const processarLista = async (listaProcesso, rodada = 1, concorrencia = 2) => {
+    let cursor = 0;
 
-  const trabalhador = async () => {
-    while (cursor < lista.length) {
-      const indice = cursor;
-      cursor += 1;
-      await cachearUm(lista[indice]);
-    }
+    const trabalhador = async () => {
+      while (cursor < listaProcesso.length) {
+        const indice = cursor;
+        cursor += 1;
+        const url = listaProcesso[indice];
+        const ok = await cachearUm(url, rodada);
+
+        processados += 1;
+
+        if (!ok) {
+          if (rodada === 1) {
+            pendentesRetry.push(url);
+          } else {
+            falhas += 1;
+          }
+        }
+
+        await emitirProgresso(url, ok ? 'cacheado' : 'falha-temporaria', false);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(concorrencia, listaProcesso.length) }, () => trabalhador())
+    );
   };
 
-  await Promise.all(
-    Array.from({ length: Math.min(CONCORRENCIA, lista.length) }, () => trabalhador())
-  );
+  // Produção/mobile: baixa com baixa concorrência para não saturar rede/memória.
+  await processarLista(lista, 1, 2);
 
-  await emitirProgresso('', 'concluido');
+  if (pendentesRetry.length > 0) {
+    const retryList = pendentesRetry.splice(0, pendentesRetry.length);
+    processados = Math.max(0, total - retryList.length);
+    falhas = 0;
+    await emitirProgresso('', 'retentativa-final', false);
+    await processarLista(retryList, 2, 1);
+  }
+
+  await emitirProgresso('', falhas > 0 ? 'concluido-com-falhas' : 'concluido', true);
 
   return { total, cacheados, falhas };
 }
@@ -255,7 +265,7 @@ async function limparCachesAntigos() {
 
   await Promise.all(
     keys.map((key) => {
-      if (!nomesPermitidos.includes(key)) {
+      if (!nomesPermitidos.includes(key) && !key.startsWith(CLIENT_MEDIA_CACHE_PREFIX)) {
         return caches.delete(key);
       }
 
@@ -559,7 +569,10 @@ self.addEventListener('message', (event) => {
   }
 
   if (data.type === 'LIMPAR_CACHE_DINAMICO') {
-    event.waitUntil(caches.delete(DYNAMIC_CACHE_NAME));
+    event.waitUntil((async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key === DYNAMIC_CACHE_NAME || key.startsWith(CLIENT_MEDIA_CACHE_PREFIX)).map((key) => caches.delete(key)));
+    })());
     return;
   }
 
