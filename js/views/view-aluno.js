@@ -442,7 +442,7 @@ export const ViewAluno = {
                     estado: 'baixando',
                     texto: `Baixando prova offline ${cacheados}/${total}`,
                     detalhe: falhas > 0
-                        ? `Baixados ${cacheados}/${total}. Falhas temporárias: ${falhas}.`
+                        ? `Baixando ${cacheados}/${total}. Repetindo ${falhas} arquivo(s) ao final.`
                         : `Baixando arquivos: ${cacheados}/${total}`,
                     progresso: this.progressoCacheSW
                 });

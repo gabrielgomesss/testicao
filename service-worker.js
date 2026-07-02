@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.07.02.001';
+const APP_VERSION = '2026.07.02.002';
 const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = `chiteroicao-dynamic-${APP_VERSION}`;
 const OFFLINE_FALLBACK = './index.html';
@@ -154,7 +154,23 @@ async function cachearLista(cacheName, urls) {
 
   await emitirProgresso('', 'iniciando');
 
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const fetchComTimeout = async (request, timeoutMs = 45000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(request, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const cachearUm = async (url) => {
+    let sucesso = false;
+    let ultimoErro = null;
+
     try {
       if (await jaExisteNoCache(cache, url)) {
         cacheados += 1;
@@ -166,36 +182,54 @@ async function cachearLista(cacheName, urls) {
       const request = new Request(url, {
         method: 'GET',
         credentials: isFirebaseStorageUrl(url) ? 'omit' : 'same-origin',
-        cache: 'reload',
+        cache: 'default',
         mode: isFirebaseStorageUrl(url) ? 'cors' : 'same-origin'
       });
 
-      const response = await fetch(request);
+      // Celulares costumam falhar quando muitos arquivos grandes são baixados em paralelo.
+      // Por isso fazemos retentativas com pausa progressiva antes de considerar falha real.
+      for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
+        try {
+          if (tentativa > 1) {
+            await emitirProgresso(url, `tentativa-${tentativa}`);
+            await esperar(900 * tentativa);
+          }
 
-      if (response && response.status === 200) {
-        // Salva com a chave do Request e também com a string da URL.
-        // Isso evita falha de match quando o navegador cria uma Request diferente
-        // para <audio>, <img> ou Range Request.
-        await cache.put(request, response.clone());
-        await cache.put(url, response.clone());
+          const response = await fetchComTimeout(request, 45000);
 
-        cacheados += 1;
-        console.log(`✅ SW: Cacheado: ${url}`);
-      } else {
+          if (response && response.status === 200) {
+            // Em mobile, salvar duas cópias do mesmo arquivo pode consumir quota e memória.
+            // Salvamos pela URL string e o match posterior procura também por pathname/token.
+            await cache.put(url, response.clone());
+
+            cacheados += 1;
+            sucesso = true;
+            console.log(`✅ SW: Cacheado: ${url}`);
+            break;
+          }
+
+          ultimoErro = new Error(`Resposta ${response?.status || 'sem status'}`);
+        } catch (erroTentativa) {
+          ultimoErro = erroTentativa;
+          console.warn(`⚠️ SW: tentativa ${tentativa}/3 falhou para: ${url}`, erroTentativa);
+        }
+      }
+
+      if (!sucesso) {
         falhas += 1;
-        console.warn(`⚠️ SW: Resposta não cacheada (${response?.status}): ${url}`);
+        console.warn(`⚠️ SW: Arquivo não cacheado após retentativas: ${url}`, ultimoErro);
       }
     } catch (e) {
       falhas += 1;
       console.warn(`⚠️ SW: Arquivo pulado: ${url}`, e);
     } finally {
       processados += 1;
-      await emitirProgresso(url, 'andamento');
+      await emitirProgresso(url, sucesso ? 'cacheado' : 'andamento');
     }
   };
 
-  // Limite de concorrência: melhora bastante o celular sem travar rede/memória.
-  const CONCORRENCIA = 4;
+  // Limite menor para mobile: evita saturar rede/memória e reduz falhas temporárias.
+  const CONCORRENCIA = 2;
   let cursor = 0;
 
   const trabalhador = async () => {
