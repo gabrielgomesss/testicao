@@ -16,38 +16,14 @@ import {
     uploadBytes,
     getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
-import { dadosSimulado } from '../../assets/data/perguntas.js';
 
 function agruparBancoLocalPorProva() {
-    const mapa = new Map();
-
-    const garantirProva = (idProva) => {
-        const id = idProva || 'modelo_prova_padrao';
-        if (!mapa.has(id)) {
-            mapa.set(id, {
-                titulo: id.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-                ativa: true,
-                origem: 'migracao_perguntas_js',
-                fases: {
-                    fase1: [],
-                    fase2: [],
-                    fase3: [],
-                    fase4: []
-                }
-            });
-        }
-        return mapa.get(id);
-    };
-
-    ['fase1', 'fase2', 'fase3', 'fase4'].forEach((fase) => {
-        (dadosSimulado[fase] || []).forEach((questao) => {
-            const idProva = questao.idProva || 'modelo_prova_padrao';
-            const prova = garantirProva(idProva);
-            prova.fases[fase].push({ ...questao });
-        });
-    });
-
-    return mapa;
+    /*
+        O projeto agora opera 100% via Firestore.
+        A antiga migração a partir de assets/data/perguntas.js foi removida
+        para permitir excluir a pasta assets/data com segurança.
+    */
+    return new Map();
 }
 
 function escaparHTML(valor = '') {
@@ -648,126 +624,6 @@ export const ViewAdmin = {
         min-height: 34px;
     }
 
-
-    /* Scroll interno + busca por fase no Banco de Questões */
-    .banco-fase-tools {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-        margin: 12px 0 14px 0;
-        flex-wrap: wrap;
-    }
-
-    .banco-fase-search-wrap {
-        flex: 1;
-        min-width: 220px;
-        position: relative;
-    }
-
-    .banco-fase-search {
-        width: 100%;
-        box-sizing: border-box;
-        border: 1px solid #cbd5e1;
-        border-radius: 12px;
-        background: #f8fafc;
-        color: #0f172a;
-        padding: 12px 14px 12px 38px;
-        font-size: 13px;
-        font-weight: 700;
-        outline: none;
-        transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
-    }
-
-    .banco-fase-search:focus {
-        border-color: var(--chitero-blue);
-        background: #ffffff;
-        box-shadow: 0 0 0 3px rgba(94,187,222,.18);
-    }
-
-    .banco-fase-search-icon {
-        position: absolute;
-        left: 13px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 13px;
-        color: #64748b;
-        pointer-events: none;
-    }
-
-    .banco-fase-count {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 38px;
-        border-radius: 999px;
-        padding: 0 12px;
-        background: #f1f5f9;
-        color: #334155;
-        font-size: 12px;
-        font-weight: 800;
-        white-space: nowrap;
-        border: 1px solid #e2e8f0;
-    }
-
-    .banco-fase-scroll {
-        max-height: 620px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding-right: 6px;
-        scroll-behavior: smooth;
-    }
-
-    .banco-fase-scroll::-webkit-scrollbar {
-        width: 8px;
-    }
-
-    .banco-fase-scroll::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 999px;
-    }
-
-    .banco-fase-scroll::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 999px;
-    }
-
-    .banco-fase-scroll::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
-    }
-
-    .banco-fase-empty-filter {
-        display: none;
-        border: 1px dashed #cbd5e1;
-        background: #f8fafc;
-        color: #64748b;
-        border-radius: 14px;
-        padding: 18px;
-        text-align: center;
-        font-size: 13px;
-        font-weight: 700;
-    }
-
-    .banco-fase-section.filtro-sem-resultados .banco-fase-empty-filter {
-        display: block;
-    }
-
-    .banco-fase-section.filtro-sem-resultados .banco-fase-scroll {
-        min-height: 72px;
-    }
-
-    @media (max-width: 760px) {
-        .banco-fase-scroll {
-            max-height: 520px;
-            padding-right: 2px;
-        }
-
-        .banco-fase-count {
-            width: 100%;
-        }
-    }
-
-
     @media (min-width: 880px) {
         #grid-provas {
             grid-template-columns: 1fr !important;
@@ -1116,7 +972,7 @@ export const ViewAdmin = {
                     <div class="banco-fase-section">
                         <h3 style="margin:0 0 8px 0;color:#0f172a;">Nenhuma questão cadastrada</h3>
                         <p style="margin:0 0 14px 0;color:#64748b;font-size:13px;line-height:1.5;">
-                            Use os botões de cadastro por fase para começar o banco de questões, ou migre o perguntas.js.
+                            Use os botões de cadastro por fase para começar o banco de questões, ou cadastre as questões pelo painel.
                         </p>
                         <button class="btn-banco-cadastrar" data-fase="fase1" style="border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer;">
                             + Cadastrar primeira questão
@@ -1207,8 +1063,6 @@ export const ViewAdmin = {
                 </button>
             `;
 
-        const totalItens = Array.isArray(itens) ? itens.length : 0;
-
         return `
             <section class="banco-fase-section" data-fase="${fase}">
                 <div class="banco-fase-header">
@@ -1218,29 +1072,8 @@ export const ViewAdmin = {
                     </div>
                     ${botaoTopo}
                 </div>
-
-                <div class="banco-fase-tools">
-                    <div class="banco-fase-search-wrap">
-                        <span class="banco-fase-search-icon">🔎</span>
-                        <input class="banco-fase-search"
-                               data-fase="${fase}"
-                               type="search"
-                               placeholder="Buscar nesta fase..."
-                               autocomplete="off">
-                    </div>
-                    <span class="banco-fase-count" data-fase-count="${fase}">
-                        Mostrando ${totalItens} de ${totalItens} item(ns)
-                    </span>
-                </div>
-
-                <div class="banco-fase-scroll">
-                    <div class="banco-fase-lista-full">
-                        ${corpo}
-                    </div>
-                </div>
-
-                <div class="banco-fase-empty-filter">
-                    Nenhum item encontrado nesta fase com esse termo.
+                <div class="banco-fase-lista-full">
+                    ${corpo}
                 </div>
             </section>
         `;
@@ -1264,7 +1097,7 @@ export const ViewAdmin = {
                 : `<p style="color:#94a3b8;font-size:13px;margin:0;">Nenhuma pergunta cadastrada para esta interaction.</p>`;
 
             return `
-                <div class="banco-interaction-section banco-search-item" data-interacao="${interacao}" data-search="${escaparHTML(this.montarTextoBuscaInteractionFase2(interacao, lista))}">
+                <div class="banco-interaction-section" data-interacao="${interacao}">
                     <div class="banco-interaction-header">
                         <div>
                             <h4>Interaction ${interacao}</h4>
@@ -1293,7 +1126,7 @@ export const ViewAdmin = {
         const badges = this.obterBadgesQuestao(fase, item, provaTitulo);
 
         return `
-            <article class="banco-questao-card banco-search-item" data-search="${escaparHTML(this.montarTextoBuscaQuestao(registro, titulo, resumo, badges))}">
+            <article class="banco-questao-card">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                     <div style="min-width:0;flex:1;">
                         <h4 style="margin:0 0 6px 0;color:#0f172a;font-size:15px;line-height:1.35;">${escaparHTML(titulo)}</h4>
@@ -1391,92 +1224,7 @@ export const ViewAdmin = {
         return `${pill('Aviation Topics')} ${origem}`;
     },
 
-    normalizarBusca(valor = '') {
-        return String(valor || '')
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-    },
-
-    montarTextoBuscaQuestao(registro = {}, titulo = '', resumo = '', badges = '') {
-        const item = registro.item || {};
-        const partes = [
-            registro.fase,
-            registro.provaId,
-            registro.provaTitulo,
-            titulo,
-            resumo,
-            badges,
-            JSON.stringify(item)
-        ];
-
-        return this.normalizarBusca(partes.join(' '));
-    },
-
-    montarTextoBuscaInteractionFase2(interacao, lista = []) {
-        const partes = [
-            `interaction ${interacao}`,
-            `interacao ${interacao}`,
-            ...lista.map((registro, ordem) => {
-                const item = registro.item || {};
-                return [
-                    registro.provaId,
-                    registro.provaTitulo,
-                    this.obterTituloResumoQuestao('fase2', item, ordem),
-                    this.obterResumoQuestao('fase2', item),
-                    JSON.stringify(item)
-                ].join(' ');
-            })
-        ];
-
-        return this.normalizarBusca(partes.join(' '));
-    },
-
-    aplicarBuscaInternaFase(section, termoBruto = '') {
-        if (!section) return;
-
-        const termo = this.normalizarBusca(termoBruto);
-        const itens = Array.from(section.querySelectorAll('.banco-search-item'));
-        const count = section.querySelector('.banco-fase-count');
-        let visiveis = 0;
-
-        itens.forEach((item) => {
-            const texto = item.dataset.search || this.normalizarBusca(item.textContent || '');
-            const exibir = !termo || texto.includes(termo);
-
-            item.style.display = exibir ? '' : 'none';
-
-            if (exibir) {
-                visiveis += 1;
-            }
-        });
-
-        if (count) {
-            count.innerText = `Mostrando ${visiveis} de ${itens.length} item(ns)`;
-        }
-
-        section.classList.toggle('filtro-sem-resultados', Boolean(termo) && visiveis === 0);
-    },
-
-    vincularBuscasInternasBancoQuestoes(container) {
-        container.querySelectorAll('.banco-fase-search').forEach((input) => {
-            input.addEventListener('input', () => {
-                const section = input.closest('.banco-fase-section');
-                this.aplicarBuscaInternaFase(section, input.value);
-            });
-        });
-
-        container.querySelectorAll('.banco-fase-section').forEach((section) => {
-            this.aplicarBuscaInternaFase(section, '');
-        });
-    },
-
     vincularEventosBancoQuestoes(container) {
-        this.vincularBuscasInternasBancoQuestoes(container);
-
         container.querySelectorAll('.btn-banco-cadastrar').forEach((btn) => {
             btn.addEventListener('click', () => this.adicionarQuestaoBanco(btn.dataset.fase, Number(btn.dataset.interacao || 0)));
         });
@@ -1838,27 +1586,7 @@ export const ViewAdmin = {
     },
 
     async migrarPerguntasLocalParaFirebase() {
-        const confirmar = confirm('Isso criará/atualizará documentos na coleção provas a partir do perguntas.js atual. Continuar?');
-        if (!confirmar) return;
-
-        try {
-            const mapa = agruparBancoLocalPorProva();
-            let total = 0;
-
-            for (const [idProva, prova] of mapa.entries()) {
-                await setDoc(doc(db, 'provas', idProva), {
-                    ...prova,
-                    updatedAt: new Date().toISOString()
-                }, { merge: true });
-                total++;
-            }
-
-            alert(`${total} prova(s) migrada(s)/atualizada(s) com sucesso.`);
-            this.renderizarProvas();
-        } catch (erro) {
-            console.error('Erro na migração:', erro);
-            alert('Erro ao migrar perguntas.js. Verifique permissões do Firestore.');
-        }
+        alert('A migração via perguntas.js foi removida. O banco de questões agora deve ser gerenciado diretamente pelo Firestore/Admin.');
     },
 
     abrirPreviewVisual(prova) {

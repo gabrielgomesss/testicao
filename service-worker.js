@@ -1,4 +1,4 @@
-const APP_VERSION = '2026.07.02.003';
+const APP_VERSION = '2026.07.02.005';
 const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = `chiteroicao-dynamic-${APP_VERSION}`;
 const OFFLINE_FALLBACK = './index.html';
@@ -24,7 +24,6 @@ const ASSETS_TO_CACHE = [
   './js/views/view-login.js',
   './js/views/view-simulado.js',
 
-  './assets/data/perguntas.js',
 
   './assets/imagens/Logotipo.avif',
   './assets/imagens/Logotipo.jpg',

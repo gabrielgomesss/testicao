@@ -7,7 +7,6 @@ import {
     where
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-import { dadosSimulado } from '../../assets/data/perguntas.js';
 import { db } from '../firebase-config.js';
 
 const CACHE_PROVAS_KEY = 'dados_simulado_cache';
@@ -275,22 +274,16 @@ export const SyncService = {
             }
 
             if (bancoEstaVazio(banco)) {
-                console.log('📘 Firestore vazio. Utilizando perguntas.js como fonte temporária.');
-
-                banco = {
-                    modelo: 'perguntas_js',
-                    ...dadosSimulado
-                };
-
-                const resultadoCache = await salvarBancoNoCache(banco, 'perguntas_js');
+                console.warn('⚠️ Firestore não possui provas cadastradas. Nenhum fallback local será utilizado.');
 
                 return {
-                    sucesso: true,
-                    origem: 'perguntas-js',
-                    cacheValido: true,
-                    dados: banco,
-                    midiasSolicitadas: resultadoCache.midiasSolicitadas,
-                    houveMudanca: resultadoCache.houveMudanca
+                    sucesso: this.existeCacheValido(),
+                    origem: 'firestore-vazio',
+                    cacheValido: this.existeCacheValido(),
+                    dados: this.obterProvasCache(),
+                    midiasSolicitadas: 0,
+                    houveMudanca: false,
+                    erro: 'Nenhuma prova ativa encontrada no Firestore.'
                 };
             }
 

@@ -2,7 +2,6 @@
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { db } from '../firebase-config.js';
-import { dadosSimulado } from '../../assets/data/perguntas.js';
 
 export const ViewSimulado = {
     config: {
@@ -22,7 +21,7 @@ export const ViewSimulado = {
         idProvaSelecionada: null
     },
 
-    dados: dadosSimulado,
+    dados: { fase1: [], fase2: [], fase3: [], fase4: [] },
 
     template: `
         <div class="simulador-master" style="width: 100%; max-width: 900px; margin: 0 auto; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; background: #fff; color: #1e1e1e; padding: 20px; box-sizing: border-box;">
@@ -138,7 +137,7 @@ export const ViewSimulado = {
             }
         }
 
-        console.log("📘 Usando fallback temporário do perguntas.js.");
+        console.warn("⚠️ Nenhum cache local de provas encontrado. O simulado precisa de sincronização com o Firestore antes de iniciar.");
     },
 
     gerarProvaSorteada() {
