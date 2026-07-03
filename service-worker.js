@@ -80,7 +80,7 @@ async function cachearLista(cacheName, urls) {
         cache: 'reload',
         // Firebase Storage em produção pode bloquear CORS.
         // Para cache offline de mídias, usamos no-cors e aceitamos resposta opaque.
-        mode: firebaseStorage ? 'no-cors' : 'same-origin'
+        mode: firebaseStorage ? 'cors' : 'same-origin'
       });
 
       const response = await fetch(request);
@@ -295,7 +295,7 @@ async function responderComCachePrimeiro(request) {
           method: 'GET',
           credentials: 'omit',
           cache: 'reload',
-          mode: 'no-cors'
+          mode: 'cors'
         })
       : request;
 
