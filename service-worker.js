@@ -1,5 +1,5 @@
-const STATIC_CACHE_NAME = 'chiteroicao-static-v10';
-const DYNAMIC_CACHE_NAME = 'chiteroicao-dynamic-v4';
+const STATIC_CACHE_NAME = 'chiteroicao-static-v11';
+const DYNAMIC_CACHE_NAME = 'chiteroicao-dynamic-v5';
 const OFFLINE_FALLBACK = './index.html';
 
 const ASSETS_TO_CACHE = [
@@ -22,8 +22,6 @@ const ASSETS_TO_CACHE = [
   './js/views/view-cadastro.js',
   './js/views/view-login.js',
   './js/views/view-simulado.js',
-
-  './assets/data/perguntas.js',
 
   './assets/imagens/Logotipo.avif',
   './assets/imagens/Logotipo.jpg',
@@ -89,7 +87,7 @@ async function cachearLista(cacheName, urls) {
       const respostaOK = response && (response.status === 200 || response.type === 'opaque');
 
       if (respostaOK) {
-        // Salva com a chave do Request e também com a string da URL.
+        // Salva somente uma entrada por URL para evitar duplicidade de respostas opaque.
         // Em Firebase Storage com no-cors, a resposta vem como opaque:
         // não pode ser lida pelo JS, mas pode ser armazenada e servida offline pelo SW.
         await cache.put(url, response.clone());
