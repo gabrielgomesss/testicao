@@ -574,6 +574,94 @@ export const ViewAdmin = {
         min-height: 34px;
     }
 
+    .btn-richtext.is-active {
+        background: #0f172a !important;
+        color: #ffffff !important;
+        border-color: #0f172a !important;
+        box-shadow: 0 0 0 2px rgba(94,187,222,.18);
+    }
+
+    .select-richtext-fontsize {
+        min-width: 128px;
+    }
+
+    .banco-fase-controles {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 10px 0 14px 0;
+        padding: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #f8fafc;
+    }
+
+    .banco-fase-search {
+        flex: 1;
+        min-width: 240px;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 11px 12px;
+        font-size: 13px;
+        color: #0f172a;
+        background: #ffffff;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .banco-fase-search:focus {
+        border-color: var(--chitero-blue);
+        box-shadow: 0 0 0 3px rgba(94,187,222,.18);
+    }
+
+    .banco-fase-count {
+        white-space: nowrap;
+        color: #475569;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 800;
+    }
+
+    .banco-fase-lista-scroll {
+        max-height: 620px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 6px;
+        scroll-behavior: smooth;
+    }
+
+    .banco-fase-lista-scroll::-webkit-scrollbar,
+    .banco-interaction-lista::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .banco-fase-lista-scroll::-webkit-scrollbar-track,
+    .banco-interaction-lista::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 999px;
+    }
+
+    .banco-fase-lista-scroll::-webkit-scrollbar-thumb,
+    .banco-interaction-lista::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 999px;
+    }
+
+    .banco-fase-lista-scroll::-webkit-scrollbar-thumb:hover,
+    .banco-interaction-lista::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+
+    .banco-questao-card[data-search-hidden="true"],
+    .banco-interaction-section[data-search-hidden="true"] {
+        display: none !important;
+    }
+
 
     .campo-richtext-admin,
     .campo-richtext-admin p,
@@ -1072,8 +1160,16 @@ export const ViewAdmin = {
                     </div>
                     ${botaoTopo}
                 </div>
-                <div class="banco-fase-lista-full">
-                    ${corpo}
+
+                <div class="banco-fase-controles">
+                    <input class="banco-fase-search" data-fase="${fase}" type="search" placeholder="Buscar nesta fase..." autocomplete="off">
+                    <span class="banco-fase-count" data-fase="${fase}">Mostrando ${itens.length} de ${itens.length} item(ns)</span>
+                </div>
+
+                <div class="banco-fase-lista-scroll" data-fase="${fase}">
+                    <div class="banco-fase-lista-full">
+                        ${corpo}
+                    </div>
                 </div>
             </section>
         `;
@@ -1125,8 +1221,10 @@ export const ViewAdmin = {
         const resumo = this.obterResumoQuestao(fase, item);
         const badges = this.obterBadgesQuestao(fase, item, provaTitulo);
 
+        const textoBusca = this.obterTextoBuscaRegistro(registro, titulo, resumo, badges);
+
         return `
-            <article class="banco-questao-card">
+            <article class="banco-questao-card" data-search-text="${escaparHTML(textoBusca)}">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                     <div style="min-width:0;flex:1;">
                         <h4 style="margin:0 0 6px 0;color:#0f172a;font-size:15px;line-height:1.35;">${escaparHTML(titulo)}</h4>
@@ -1147,6 +1245,77 @@ export const ViewAdmin = {
                 </div>
             </article>
         `;
+    },
+
+    obterTextoBuscaRegistro(registro = {}, titulo = '', resumo = '', badges = '') {
+        const item = registro.item || {};
+        const partes = [
+            registro.fase,
+            registro.provaId,
+            registro.provaTitulo,
+            titulo,
+            resumo,
+            textoPlanoRichText(badges),
+            textoPlanoRichText(JSON.stringify(item || {}))
+        ];
+
+        return partes
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '');
+    },
+
+    normalizarTextoBusca(valor = '') {
+        return String(valor || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .trim();
+    },
+
+    aplicarBuscaNaFase(secao, termoBruto = '') {
+        if (!secao) return;
+
+        const termo = this.normalizarTextoBusca(termoBruto);
+        const cards = Array.from(secao.querySelectorAll('.banco-questao-card'));
+        let visiveis = 0;
+
+        cards.forEach((card) => {
+            const texto = card.dataset.searchText || this.normalizarTextoBusca(card.innerText || '');
+            const mostrar = !termo || texto.includes(termo);
+            card.dataset.searchHidden = mostrar ? 'false' : 'true';
+            if (mostrar) visiveis += 1;
+        });
+
+        secao.querySelectorAll('.banco-interaction-section').forEach((grupo) => {
+            const cardsGrupo = Array.from(grupo.querySelectorAll('.banco-questao-card'));
+
+            if (!cardsGrupo.length) {
+                grupo.dataset.searchHidden = termo ? 'true' : 'false';
+                return;
+            }
+
+            const algumVisivel = cardsGrupo.some((card) => card.dataset.searchHidden !== 'true');
+            grupo.dataset.searchHidden = algumVisivel ? 'false' : 'true';
+        });
+
+        const count = secao.querySelector('.banco-fase-count');
+        if (count) {
+            count.innerText = `Mostrando ${visiveis} de ${cards.length} item(ns)`;
+        }
+    },
+
+    vincularBuscaBancoQuestoes(container) {
+        container.querySelectorAll('.banco-fase-search').forEach((input) => {
+            const secao = input.closest('.banco-fase-section');
+            this.aplicarBuscaNaFase(secao, input.value || '');
+
+            input.addEventListener('input', () => {
+                this.aplicarBuscaNaFase(secao, input.value || '');
+            });
+        });
     },
 
     obterNomeCurtoFase(fase) {
@@ -1225,6 +1394,8 @@ export const ViewAdmin = {
     },
 
     vincularEventosBancoQuestoes(container) {
+        this.vincularBuscaBancoQuestoes(container);
+
         container.querySelectorAll('.btn-banco-cadastrar').forEach((btn) => {
             btn.addEventListener('click', () => this.adicionarQuestaoBanco(btn.dataset.fase, Number(btn.dataset.interacao || 0)));
         });
@@ -2173,8 +2344,7 @@ export const ViewAdmin = {
                 <button type="button" class="btn-richtext" data-editor="${editorId}" data-command="insertUnorderedList" title="Lista com tópicos" style="background:#fff;border:1px solid #cbd5e1;border-radius:7px;padding:7px 10px;cursor:pointer;">• Lista</button>
                 <button type="button" class="btn-richtext" data-editor="${editorId}" data-command="insertOrderedList" title="Lista numerada" style="background:#fff;border:1px solid #cbd5e1;border-radius:7px;padding:7px 10px;cursor:pointer;">1. Lista</button>
 
-                <select class="select-richtext-fontsize" data-editor="${editorId}" title="Tamanho da fonte" style="background:#fff;border:1px solid #cbd5e1;border-radius:7px;padding:7px 9px;cursor:pointer;color:#0f172a;font-weight:700;">
-                    <option value="">Tamanho</option>
+                <select class="select-richtext-fontsize" data-editor="${editorId}" title="Tamanho da fonte atual" style="background:#fff;border:1px solid #cbd5e1;border-radius:7px;padding:7px 9px;cursor:pointer;color:#0f172a;font-weight:700;">
                     <option value="12px">12px</option>
                     <option value="14px">14px</option>
                     <option value="16px">16px</option>
@@ -2189,7 +2359,72 @@ export const ViewAdmin = {
         `;
     },
 
+    obterEditorDaSelecao(editor) {
+        const selection = window.getSelection?.();
+        if (!selection || !selection.rangeCount) return editor;
+
+        let node = selection.anchorNode;
+        if (!node) return editor;
+
+        if (node.nodeType === Node.TEXT_NODE) {
+            node = node.parentElement;
+        }
+
+        if (!node || !editor.contains(node)) return editor;
+
+        return node;
+    },
+
+    obterFontSizeAtual(editor) {
+        const alvo = this.obterEditorDaSelecao(editor);
+        const computed = window.getComputedStyle(alvo || editor);
+        const tamanho = computed?.fontSize || '14px';
+        const numero = Math.round(parseFloat(tamanho) || 14);
+        const opcoes = [12, 14, 16, 18, 20, 24, 28];
+        const maisProxima = opcoes.reduce((melhor, atual) => {
+            return Math.abs(atual - numero) < Math.abs(melhor - numero) ? atual : melhor;
+        }, 14);
+
+        return `${maisProxima}px`;
+    },
+
+    atualizarEstadoToolbarRichText(editorId) {
+        const editor = document.getElementById(editorId);
+        if (!editor) return;
+
+        const toolbar = document.querySelector(`.richtext-toolbar[data-editor="${editorId}"]`);
+        if (!toolbar) return;
+
+        const comandos = ['bold', 'italic', 'underline', 'insertUnorderedList', 'insertOrderedList'];
+
+        comandos.forEach((command) => {
+            const btn = toolbar.querySelector(`.btn-richtext[data-command="${command}"]`);
+            if (!btn) return;
+
+            let ativo = false;
+            try {
+                ativo = document.queryCommandState(command);
+            } catch {
+                ativo = false;
+            }
+
+            btn.classList.toggle('is-active', Boolean(ativo));
+            btn.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+        });
+
+        const select = toolbar.querySelector('.select-richtext-fontsize');
+        if (select) {
+            const tamanho = this.obterFontSizeAtual(editor);
+            select.value = tamanho;
+            select.title = `Tamanho da fonte atual: ${tamanho}`;
+        }
+    },
+
     ativarToolbarsRichText(container = document) {
+        const atualizarDepois = (editorId) => {
+            setTimeout(() => this.atualizarEstadoToolbarRichText(editorId), 0);
+        };
+
         container.querySelectorAll('.btn-richtext').forEach((btn) => {
             btn.onclick = (event) => {
                 event.preventDefault();
@@ -2205,18 +2440,29 @@ export const ViewAdmin = {
                 if (command === 'removeFormat') {
                     document.execCommand('removeFormat', false, null);
                     document.execCommand('unlink', false, null);
+                    atualizarDepois(editorId);
                     return;
                 }
 
                 document.execCommand(command, false, null);
+                atualizarDepois(editorId);
             };
         });
 
         container.querySelectorAll('.select-richtext-fontsize').forEach((select) => {
+            const editorId = select.dataset.editor;
+            const editor = document.getElementById(editorId);
+
+            if (editor) {
+                const inicial = this.obterFontSizeAtual(editor);
+                select.value = inicial;
+                select.title = `Tamanho da fonte atual: ${inicial}`;
+            }
+
             select.onchange = (event) => {
                 const editorId = select.dataset.editor;
                 const editor = document.getElementById(editorId);
-                const size = event.target.value;
+                const size = event.target.value || '14px';
 
                 if (!editor || !size) return;
 
@@ -2236,9 +2482,32 @@ export const ViewAdmin = {
                     font.replaceWith(span);
                 });
 
-                select.value = '';
+                select.value = size;
+                select.title = `Tamanho da fonte atual: ${size}`;
+                atualizarDepois(editorId);
             };
         });
+
+        container.querySelectorAll('.campo-richtext-admin').forEach((editor) => {
+            const atualizar = () => this.atualizarEstadoToolbarRichText(editor.id);
+
+            editor.addEventListener('keyup', atualizar);
+            editor.addEventListener('mouseup', atualizar);
+            editor.addEventListener('focus', atualizar);
+            editor.addEventListener('input', atualizar);
+
+            setTimeout(atualizar, 0);
+        });
+
+        if (!this._richTextSelectionListenerAtivo) {
+            this._richTextSelectionListenerAtivo = true;
+            document.addEventListener('selectionchange', () => {
+                const ativo = document.activeElement;
+                if (ativo?.classList?.contains('campo-richtext-admin')) {
+                    this.atualizarEstadoToolbarRichText(ativo.id);
+                }
+            });
+        }
     },
 
     criarCampoRichText({ id, valor = '', minHeight = 180 }) {
