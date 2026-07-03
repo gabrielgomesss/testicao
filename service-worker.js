@@ -74,25 +74,30 @@ async function cachearLista(cacheName, urls) {
 
   for (const url of lista) {
     try {
+      const firebaseStorage = isFirebaseStorageUrl(url);
+
       const request = new Request(url, {
         method: 'GET',
-        credentials: isFirebaseStorageUrl(url) ? 'omit' : 'same-origin',
+        credentials: firebaseStorage ? 'omit' : 'same-origin',
         cache: 'reload',
-        mode: isFirebaseStorageUrl(url) ? 'cors' : 'same-origin'
+        // Firebase Storage em produção pode bloquear CORS.
+        // Para cache offline de mídias, usamos no-cors e aceitamos resposta opaque.
+        mode: firebaseStorage ? 'no-cors' : 'same-origin'
       });
 
       const response = await fetch(request);
+      const respostaOK = response && (response.status === 200 || response.type === 'opaque');
 
-      if (response && response.status === 200) {
+      if (respostaOK) {
         // Salva com a chave do Request e também com a string da URL.
-        // Isso evita falha de match quando o navegador cria uma Request diferente
-        // para <audio>, <img> ou Range Request.
+        // Em Firebase Storage com no-cors, a resposta vem como opaque:
+        // não pode ser lida pelo JS, mas pode ser armazenada e servida offline pelo SW.
         await cache.put(request, response.clone());
         await cache.put(url, response.clone());
 
-        console.log(`✅ SW: Cacheado: ${url}`);
+        console.log(`✅ SW: Cacheado: ${url} (${response.type || response.status})`);
       } else {
-        console.warn(`⚠️ SW: Resposta não cacheada (${response?.status}): ${url}`);
+        console.warn(`⚠️ SW: Resposta não cacheada (${response?.status || response?.type}): ${url}`);
       }
     } catch (e) {
       console.warn(`⚠️ SW: Arquivo pulado: ${url}`, e);
@@ -238,7 +243,7 @@ async function responderRangeDoCache(request) {
 
   const rangeHeader = request.headers.get('range');
 
-  if (!rangeHeader) {
+  if (!rangeHeader || cachedResponse.type === 'opaque') {
     return cachedResponse.clone();
   }
 
@@ -284,18 +289,26 @@ async function responderComCachePrimeiro(request) {
   }
 
   try {
-    const networkResponse = await fetch(request);
+    const url = new URL(request.url);
+    const isSameOrigin = url.origin === self.location.origin;
+    const isFirebaseStorage = url.hostname.includes('firebasestorage.googleapis.com') || url.hostname.includes('storage.googleapis.com');
 
-    if (networkResponse && networkResponse.status === 200) {
-      const url = new URL(request.url);
-      const isSameOrigin = url.origin === self.location.origin;
-      const isFirebaseStorage = url.hostname.includes('firebasestorage.googleapis.com') || url.hostname.includes('storage.googleapis.com');
+    const fetchRequest = isFirebaseStorage
+      ? new Request(request.url, {
+          method: 'GET',
+          credentials: 'omit',
+          cache: 'reload',
+          mode: 'no-cors'
+        })
+      : request;
 
-      if (isSameOrigin || isFirebaseStorage) {
-        const cache = await caches.open(DYNAMIC_CACHE_NAME);
-        await cache.put(request, networkResponse.clone());
-        await cache.put(request.url, networkResponse.clone());
-      }
+    const networkResponse = await fetch(fetchRequest);
+    const respostaOK = networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque');
+
+    if (respostaOK && (isSameOrigin || isFirebaseStorage)) {
+      const cache = await caches.open(DYNAMIC_CACHE_NAME);
+      await cache.put(fetchRequest, networkResponse.clone());
+      await cache.put(request.url, networkResponse.clone());
     }
 
     return networkResponse;
