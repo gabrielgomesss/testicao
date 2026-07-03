@@ -92,7 +92,6 @@ async function cachearLista(cacheName, urls) {
         // Salva com a chave do Request e também com a string da URL.
         // Em Firebase Storage com no-cors, a resposta vem como opaque:
         // não pode ser lida pelo JS, mas pode ser armazenada e servida offline pelo SW.
-        await cache.put(request, response.clone());
         await cache.put(url, response.clone());
 
         console.log(`✅ SW: Cacheado: ${url} (${response.type || response.status})`);
@@ -307,7 +306,6 @@ async function responderComCachePrimeiro(request) {
 
     if (respostaOK && (isSameOrigin || isFirebaseStorage)) {
       const cache = await caches.open(DYNAMIC_CACHE_NAME);
-      await cache.put(fetchRequest, networkResponse.clone());
       await cache.put(request.url, networkResponse.clone());
     }
 
