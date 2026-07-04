@@ -837,7 +837,7 @@ export const ViewSimulado = {
     criarPilula(container, texto, idx, ativo, onClick) {
         const pilula = document.createElement('button');
         pilula.innerText = texto;
-        pilula.style.cssText = `padding: 10px 24px; border-radius: 20px; border: 1px solid ${ativo ? '#000' : '#ddd'}; background: ${ativo ? '#000' : '#fff'}; color: ${ativo ? '#fff' : '#111'}; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s;`;
+        pilula.style.cssText = `padding: 5px 15px; border-radius: 20px; border: 1px solid ${ativo ? '#000' : '#ddd'}; background: ${ativo ? '#000' : '#fff'}; color: ${ativo ? '#fff' : '#111'}; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s;`;
         pilula.onclick = onClick;
         container.appendChild(pilula);
     },
