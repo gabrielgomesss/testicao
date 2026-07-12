@@ -3,6 +3,13 @@
 import { SyncService } from '../modules/sync-service.js';
 
 export const ViewAluno = {
+    pullRefreshAtivo: false,
+    pullRefreshInicioY: 0,
+    pullRefreshPronto: false,
+    listenerAtualizacaoConfigurado: false,
+    intervaloAtualizacaoCodigo: null,
+    atualizacaoPendente: null,
+    atualizacaoEmCurso: false,
     CACHE_CONFIRMADO_KEY: 'chiteroicao_cache_offline_confirmado',
     intervaloStatusOffline: null,
     verificacaoCacheEmAndamento: false,
@@ -94,6 +101,9 @@ export const ViewAluno = {
     `,
 
     init(usuarioLogado, callbacks) {
+        this.configurarAtualizacaoAutomatica();
+        this.ativarPullToRefreshIOS();
+
         document.getElementById('aluno-email').innerText = usuarioLogado.email || 'Não informado';
         document.getElementById('aluno-curso').innerText = usuarioLogado.cursoAtivo || 'Não Definido';
 
@@ -169,6 +179,190 @@ export const ViewAluno = {
             this.cacheOfflineConfirmado = false;
             this.atualizarStatusOffline();
         });
+    },
+
+    configurarAtualizacaoAutomatica() {
+        if (!('serviceWorker' in navigator) || this.listenerAtualizacaoConfigurado) return;
+        this.listenerAtualizacaoConfigurado = true;
+
+        const observarRegistration = (registration) => {
+            if (!registration) return;
+
+            if (registration.waiting) {
+                this.exibirAvisoNovaVersao(registration.waiting);
+            }
+
+            registration.addEventListener('updatefound', () => {
+                const installing = registration.installing;
+                if (!installing) return;
+
+                installing.addEventListener('statechange', () => {
+                    if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                        this.exibirAvisoNovaVersao(registration.waiting || installing);
+                    }
+                });
+            });
+        };
+
+        navigator.serviceWorker.ready.then(observarRegistration).catch(() => {});
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!this.atualizacaoEmCurso) return;
+            const chave = 'chiteroicao_update_reload_done';
+            if (sessionStorage.getItem(chave) === '1') return;
+            sessionStorage.setItem(chave, '1');
+            window.location.reload();
+        });
+
+        window.addEventListener('pageshow', () => {
+            sessionStorage.removeItem('chiteroicao_update_reload_done');
+        });
+
+        const verificar = async () => {
+            if (!navigator.onLine) return false;
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (!registration) return false;
+                await registration.update();
+                observarRegistration(registration);
+                return Boolean(registration.waiting);
+            } catch (erro) {
+                console.warn('Não foi possível verificar atualização do aplicativo.', erro);
+                return false;
+            }
+        };
+
+        this.verificarAtualizacaoDisponivel = verificar;
+        verificar();
+
+        if (this.intervaloAtualizacaoCodigo) clearInterval(this.intervaloAtualizacaoCodigo);
+        this.intervaloAtualizacaoCodigo = setInterval(verificar, 5 * 60 * 1000);
+    },
+
+    exibirAvisoNovaVersao(worker) {
+        if (!worker) return;
+        this.atualizacaoPendente = worker;
+
+        let aviso = document.getElementById('chitero-update-banner');
+        if (!aviso) {
+            aviso = document.createElement('div');
+            aviso.id = 'chitero-update-banner';
+            aviso.style.cssText = 'position:fixed;left:12px;right:12px;bottom:16px;z-index:1000000;max-width:520px;margin:0 auto;background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:14px;box-shadow:0 18px 45px rgba(0,0,0,.38);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:space-between;gap:12px;';
+            aviso.innerHTML = `
+                <div style="min-width:0;">
+                    <div style="font-size:13px;font-weight:900;margin-bottom:3px;">Nova versão disponível</div>
+                    <div style="font-size:11px;color:#cbd5e1;line-height:1.4;">Atualize para receber as melhorias mais recentes. As provas offline serão preservadas.</div>
+                </div>
+                <button id="chitero-update-now" type="button" style="flex:0 0 auto;background:#5EBBDE;color:#fff;border:none;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer;">Atualizar agora</button>
+            `;
+            document.body.appendChild(aviso);
+            aviso.querySelector('#chitero-update-now')?.addEventListener('click', () => this.aplicarAtualizacaoPendente());
+        }
+        aviso.style.display = 'flex';
+    },
+
+    async aplicarAtualizacaoPendente() {
+        if (this.atualizacaoEmCurso) return;
+        this.atualizacaoEmCurso = true;
+
+        const botao = document.getElementById('chitero-update-now');
+        if (botao) {
+            botao.disabled = true;
+            botao.innerText = 'Atualizando...';
+        }
+
+        try {
+            let worker = this.atualizacaoPendente;
+            if (!worker) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                worker = registration?.waiting || null;
+            }
+
+            if (worker) {
+                worker.postMessage({ type: 'SKIP_WAITING' });
+                setTimeout(() => window.location.reload(), 5000);
+                return;
+            }
+
+            window.location.reload();
+        } catch (erro) {
+            console.warn('Falha ao aplicar atualização.', erro);
+            window.location.reload();
+        }
+    },
+
+    async forcarAtualizacaoAplicacao() {
+        if (!navigator.onLine) {
+            window.location.reload();
+            return;
+        }
+
+        const encontrou = await this.verificarAtualizacaoDisponivel?.();
+        const registration = await navigator.serviceWorker.getRegistration().catch(() => null);
+
+        if (encontrou || registration?.waiting) {
+            this.exibirAvisoNovaVersao(registration.waiting);
+            return;
+        }
+
+        window.location.reload();
+    },
+
+    ativarPullToRefreshIOS() {
+        if (this.pullRefreshAtivo || typeof window === 'undefined' || !('ontouchstart' in window)) return;
+        this.pullRefreshAtivo = true;
+
+        let indicador = document.getElementById('aluno-pull-refresh-indicator');
+        if (!indicador) {
+            indicador = document.createElement('div');
+            indicador.id = 'aluno-pull-refresh-indicator';
+            indicador.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%) translateY(-80px);z-index:999999;background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:9px 14px;font-size:12px;font-weight:800;box-shadow:0 12px 30px rgba(0,0,0,.28);transition:transform .18s ease,opacity .18s ease;opacity:0;pointer-events:none;';
+            indicador.innerText = 'Puxe para atualizar';
+            document.body.appendChild(indicador);
+        }
+
+        const mostrar = (texto, pronto) => {
+            indicador.innerText = texto;
+            indicador.style.opacity = '1';
+            indicador.style.transform = `translateX(-50%) translateY(${pronto ? '0' : '-18px'})`;
+        };
+
+        const ocultar = () => {
+            indicador.style.opacity = '0';
+            indicador.style.transform = 'translateX(-50%) translateY(-80px)';
+        };
+
+        window.addEventListener('touchstart', (event) => {
+            const alvo = event.target;
+            if (alvo?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+            if (window.scrollY > 2 || !event.touches?.length) return;
+
+            this.pullRefreshInicioY = event.touches[0].clientY;
+            this.pullRefreshPronto = false;
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (event) => {
+            if (!this.pullRefreshInicioY || window.scrollY > 2 || !event.touches?.length) return;
+
+            const delta = event.touches[0].clientY - this.pullRefreshInicioY;
+            if (delta <= 28) return;
+
+            this.pullRefreshPronto = delta >= 86;
+            mostrar(this.pullRefreshPronto ? 'Solte para atualizar' : 'Puxe para atualizar', this.pullRefreshPronto);
+        }, { passive: true });
+
+        window.addEventListener('touchend', () => {
+            const atualizar = this.pullRefreshPronto;
+            this.pullRefreshInicioY = 0;
+            this.pullRefreshPronto = false;
+
+            if (atualizar) {
+                mostrar('Atualizando...', true);
+                this.forcarAtualizacaoAplicacao();
+            } else {
+                ocultar();
+            }
+        }, { passive: true });
     },
 
     injetarCSSStatusCache() {

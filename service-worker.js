@@ -1,4 +1,5 @@
-const STATIC_CACHE_NAME = 'chiteroicao-static-v11';
+const APP_VERSION = '2026.07.10.002';
+const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = 'chiteroicao-dynamic-v5';
 const OFFLINE_FALLBACK = './index.html';
 
@@ -29,6 +30,39 @@ const ASSETS_TO_CACHE = [
   './assets/imagens/icon-512.png',
   './assets/imagens/maskable-icon-512.png'
 ];
+
+const CODIGO_LOCAL_REGEX = /(?:\/|^)(?:index\.html|manifest\.json|pwa-installer\.js|css\/.*\.css|js\/.*\.js)(?:\?|$)/i;
+
+function isRecursoCodigoLocal(request) {
+  try {
+    const url = new URL(request.url);
+    return url.origin === self.location.origin && CODIGO_LOCAL_REGEX.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function adicionarCacheBuster(url) {
+  try {
+    const u = new URL(url);
+    u.searchParams.set('swv', APP_VERSION);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+async function notificarClientesAtualizacao() {
+  const clientes = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+
+  await Promise.all(clientes.map(async (cliente) => {
+    try {
+      cliente.postMessage({ type: 'APP_UPDATED', version: APP_VERSION });
+    } catch (erro) {
+      console.warn('SW: não foi possível notificar cliente aberto.', erro);
+    }
+  }));
+}
 
 function normalizarUrlParaCache(url) {
   if (!url || typeof url !== 'string') return null;
@@ -103,12 +137,16 @@ async function cachearLista(cacheName, urls) {
 }
 
 async function limparCachesAntigos() {
-  const nomesPermitidos = [STATIC_CACHE_NAME, DYNAMIC_CACHE_NAME];
   const keys = await caches.keys();
 
   await Promise.all(
     keys.map((key) => {
-      if (!nomesPermitidos.includes(key)) {
+      const ehStaticAntigo = key.startsWith('chiteroicao-static-') && key !== STATIC_CACHE_NAME;
+      const ehShellAntigo = /app-shell|precache|workbox/i.test(key);
+
+      // O cache dinâmico contém as provas, áudios e imagens offline e deve
+      // permanecer preservado durante atualizações de código.
+      if (ehStaticAntigo || ehShellAntigo) {
         return caches.delete(key);
       }
 
@@ -275,6 +313,32 @@ async function responderRangeDoCache(request) {
   }
 }
 
+async function responderCodigoNetworkFirst(request) {
+  try {
+    const networkResponse = await fetch(new Request(request, { cache: 'no-store' }));
+
+    if (networkResponse && networkResponse.ok) {
+      const cache = await caches.open(STATIC_CACHE_NAME);
+      await cache.put(request, networkResponse.clone());
+    }
+
+    return networkResponse;
+  } catch (erro) {
+    const cached = await encontrarNoCache(request);
+    if (cached) return cached.clone();
+
+    if (request.mode === 'navigate') {
+      const fallback = await caches.match(OFFLINE_FALLBACK, { ignoreSearch: true });
+      if (fallback) return fallback;
+    }
+
+    return new Response('Recurso indisponível offline.', {
+      status: 503,
+      statusText: 'Offline'
+    });
+  }
+}
+
 async function responderComCachePrimeiro(request) {
   if (request.headers.has('range')) {
     return responderRangeDoCache(request);
@@ -329,19 +393,28 @@ async function responderComCachePrimeiro(request) {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     cachearLista(STATIC_CACHE_NAME, ASSETS_TO_CACHE)
-      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    limparCachesAntigos()
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    await limparCachesAntigos();
+    await self.clients.claim();
+    await notificarClientesAtualizacao();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
   if (deveIgnorarRequest(event.request)) return;
+
+  // HTML, JS, CSS e manifest usam network-first. Assim, quando houver uma
+  // versão nova em produção, o navegador recebe o código atual sem exigir
+  // limpeza manual de cache. Offline, o cache estático continua funcionando.
+  if (event.request.mode === 'navigate' || isRecursoCodigoLocal(event.request)) {
+    event.respondWith(responderCodigoNetworkFirst(event.request));
+    return;
+  }
+
   event.respondWith(responderComCachePrimeiro(event.request));
 });
 
@@ -356,6 +429,16 @@ self.addEventListener('message', (event) => {
 
   if (data.type === 'LIMPAR_CACHE_DINAMICO') {
     event.waitUntil(caches.delete(DYNAMIC_CACHE_NAME));
+    return;
+  }
+
+  if (data.type === 'GET_APP_VERSION') {
+    event.source?.postMessage?.({ type: 'APP_VERSION', version: APP_VERSION });
+    return;
+  }
+
+  if (data.type === 'FORCE_APP_UPDATE') {
+    self.skipWaiting();
     return;
   }
 

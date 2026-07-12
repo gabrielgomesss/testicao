@@ -4,6 +4,16 @@ import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/fire
 import { db } from '../firebase-config.js';
 
 export const ViewSimulado = {
+    APP_BUILD: '2026-07-10-auto-update-ios-v2',
+    APP_VERSION_KEY: 'chiteroicao_simulado_app_build',
+    pullRefreshAtivo: false,
+    pullRefreshInicioY: 0,
+    pullRefreshDisparado: false,
+    listenerAtualizacaoConfigurado: false,
+    intervaloAtualizacaoCodigo: null,
+    atualizacaoPendente: null,
+    atualizacaoEmCurso: false,
+
     config: {
         quantidadePorFase: {
             1: 3,
@@ -60,6 +70,9 @@ export const ViewSimulado = {
             causando tela branca até o getDoc falhar.
         */
 
+        this.verificarAtualizacaoCodigoEmCache();
+        this.ativarPullToRefreshIOS();
+
         this.carregarDadosDoCacheLocal();
         this.gerarProvaSorteada();
         this.vincularEventosFases();
@@ -94,6 +107,185 @@ export const ViewSimulado = {
         } catch (erro) {
             console.warn("⚠️ Falha na verificação online em segundo plano. Mantendo prova via cache local.", erro);
         }
+    },
+
+    async verificarAtualizacaoCodigoEmCache() {
+        if (!('serviceWorker' in navigator) || this.listenerAtualizacaoConfigurado) return;
+        this.listenerAtualizacaoConfigurado = true;
+
+        const observarRegistration = (registration) => {
+            if (!registration) return;
+            if (registration.waiting) this.exibirAvisoNovaVersao(registration.waiting);
+
+            registration.addEventListener('updatefound', () => {
+                const installing = registration.installing;
+                if (!installing) return;
+                installing.addEventListener('statechange', () => {
+                    if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                        this.exibirAvisoNovaVersao(registration.waiting || installing);
+                    }
+                });
+            });
+        };
+
+        navigator.serviceWorker.ready.then(observarRegistration).catch(() => {});
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (!this.atualizacaoEmCurso) return;
+            const chave = 'chiteroicao_update_reload_done';
+            if (sessionStorage.getItem(chave) === '1') return;
+            sessionStorage.setItem(chave, '1');
+            window.location.reload();
+        });
+
+        window.addEventListener('pageshow', () => sessionStorage.removeItem('chiteroicao_update_reload_done'));
+
+        const verificar = async () => {
+            if (!navigator.onLine) return false;
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (!registration) return false;
+                await registration.update();
+                observarRegistration(registration);
+                return Boolean(registration.waiting);
+            } catch (erro) {
+                console.warn('Falha ao verificar atualização do código.', erro);
+                return false;
+            }
+        };
+
+        this.verificarAtualizacaoDisponivel = verificar;
+        verificar();
+        if (this.intervaloAtualizacaoCodigo) clearInterval(this.intervaloAtualizacaoCodigo);
+        this.intervaloAtualizacaoCodigo = setInterval(verificar, 5 * 60 * 1000);
+    },
+
+    exibirAvisoNovaVersao(worker) {
+        if (!worker) return;
+        this.atualizacaoPendente = worker;
+
+        let aviso = document.getElementById('chitero-update-banner');
+        if (!aviso) {
+            aviso = document.createElement('div');
+            aviso.id = 'chitero-update-banner';
+            aviso.style.cssText = 'position:fixed;left:12px;right:12px;bottom:16px;z-index:1000000;max-width:520px;margin:0 auto;background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:14px;box-shadow:0 18px 45px rgba(0,0,0,.38);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:space-between;gap:12px;';
+            aviso.innerHTML = `
+                <div style="min-width:0;">
+                    <div style="font-size:13px;font-weight:900;margin-bottom:3px;">Nova versão disponível</div>
+                    <div style="font-size:11px;color:#cbd5e1;line-height:1.4;">Finalize a etapa atual ou atualize agora. Seu banco de provas offline será preservado.</div>
+                </div>
+                <button id="chitero-update-now" type="button" style="flex:0 0 auto;background:#5EBBDE;color:#fff;border:none;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:900;cursor:pointer;">Atualizar agora</button>
+            `;
+            document.body.appendChild(aviso);
+            aviso.querySelector('#chitero-update-now')?.addEventListener('click', () => this.aplicarAtualizacaoPendente());
+        }
+        aviso.style.display = 'flex';
+    },
+
+    async aplicarAtualizacaoPendente() {
+        if (this.atualizacaoEmCurso) return;
+        this.atualizacaoEmCurso = true;
+
+        const botao = document.getElementById('chitero-update-now');
+        if (botao) {
+            botao.disabled = true;
+            botao.innerText = 'Atualizando...';
+        }
+
+        try {
+            let worker = this.atualizacaoPendente;
+            if (!worker) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                worker = registration?.waiting || null;
+            }
+
+            if (worker) {
+                worker.postMessage({ type: 'SKIP_WAITING' });
+                setTimeout(() => window.location.reload(), 5000);
+                return;
+            }
+
+            window.location.reload();
+        } catch (erro) {
+            console.warn('Falha ao aplicar atualização.', erro);
+            window.location.reload();
+        }
+    },
+
+    async forcarRefreshCodigo() {
+        if (!navigator.onLine) {
+            window.location.reload();
+            return;
+        }
+
+        const encontrou = await this.verificarAtualizacaoDisponivel?.();
+        const registration = await navigator.serviceWorker.getRegistration().catch(() => null);
+
+        if (encontrou || registration?.waiting) {
+            this.exibirAvisoNovaVersao(registration.waiting);
+            return;
+        }
+
+        window.location.reload();
+    },
+
+    ativarPullToRefreshIOS() {
+        if (this.pullRefreshAtivo || typeof window === 'undefined') return;
+        this.pullRefreshAtivo = true;
+
+        let indicador = document.getElementById('simulado-pull-refresh-indicator');
+        if (!indicador) {
+            indicador = document.createElement('div');
+            indicador.id = 'simulado-pull-refresh-indicator';
+            indicador.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%) translateY(-80px);z-index:999999;background:#0f172a;color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:9px 14px;font-size:12px;font-weight:800;box-shadow:0 12px 30px rgba(0,0,0,.28);transition:transform .18s ease, opacity .18s ease;opacity:0;pointer-events:none;';
+            indicador.innerText = 'Puxe para atualizar';
+            document.body.appendChild(indicador);
+        }
+
+        const mostrar = (texto, ativo = false) => {
+            indicador.innerText = texto;
+            indicador.style.opacity = '1';
+            indicador.style.transform = `translateX(-50%) translateY(${ativo ? '0' : '-18px'})`;
+        };
+
+        const ocultar = () => {
+            indicador.style.opacity = '0';
+            indicador.style.transform = 'translateX(-50%) translateY(-80px)';
+        };
+
+        window.addEventListener('touchstart', (event) => {
+            if (window.scrollY > 2 || !event.touches?.length) return;
+            this.pullRefreshInicioY = event.touches[0].clientY;
+            this.pullRefreshDisparado = false;
+        }, { passive: true });
+
+        window.addEventListener('touchmove', (event) => {
+            if (!this.pullRefreshInicioY || window.scrollY > 2 || !event.touches?.length) return;
+
+            const delta = event.touches[0].clientY - this.pullRefreshInicioY;
+
+            if (delta > 35) {
+                mostrar(delta > 78 ? 'Solte para atualizar' : 'Puxe para atualizar', delta > 78);
+            }
+
+            if (delta > 92) {
+                this.pullRefreshDisparado = true;
+            }
+        }, { passive: true });
+
+        window.addEventListener('touchend', () => {
+            const deveAtualizar = this.pullRefreshDisparado;
+            this.pullRefreshInicioY = 0;
+            this.pullRefreshDisparado = false;
+
+            if (deveAtualizar) {
+                mostrar('Atualizando...', true);
+                this.forcarRefreshCodigo();
+                return;
+            }
+
+            ocultar();
+        }, { passive: true });
     },
 
     carregarDadosDoCacheLocal() {
@@ -142,17 +334,17 @@ export const ViewSimulado = {
 
     gerarProvaSorteada() {
         /*
-            Novo modelo:
-            Não sorteamos mais uma prova inteira.
-            Agora o simulado é montado a partir do banco completo de questões:
-            - Fase 1: sorteia 3 questões de todo o banco;
-            - Fase 2: sorteia 1 questão para cada Interaction 1, 2, 3, 4 e 5;
-            - Fase 3: sorteia 1 bloco completo;
+            Modelo ajustado conforme alinhamento:
+            - Fase 1: sorteia 3 questões de todo o banco.
+            - Fase 2: as interações 1, 2 e 3 sorteiam do mesmo pool sem imagem obrigatória.
+              As interações 4 e 5 sorteiam do mesmo pool com imagem obrigatória.
+              O campo interacao cadastrado no admin passa a ser usado apenas como grupo de origem.
+            - Fase 3: sorteia situações individualmente de todo o banco, sem prender a situação
+              ao bloco em que foi cadastrada.
             - Fase 4: sorteia 1 photo.
         */
 
         const fase1 = Array.isArray(this.dados.fase1) ? this.dados.fase1 : [];
-        const fase3 = Array.isArray(this.dados.fase3) ? this.dados.fase3 : [];
         const fase4 = Array.isArray(this.dados.fase4) ? this.dados.fase4 : [];
 
         const fase2Ordenada = [];
@@ -161,18 +353,27 @@ export const ViewSimulado = {
             const candidatas = this.obterCandidatasFase2PorInteracao(interacao);
 
             if (candidatas.length) {
-                fase2Ordenada.push(this.embaralharELimitar(candidatas, 1)[0]);
+                const sorteada = this.embaralharELimitar(candidatas, 1)[0];
+                fase2Ordenada.push({
+                    ...sorteada,
+                    interacao
+                });
             } else {
                 console.warn(`Nenhuma questão encontrada para a Fase 2, Interaction ${interacao}.`);
             }
         }
+
+        const situacoesFase3 = this.obterPoolSituacoesFase3();
+        const situacoesSorteadas = this.embaralharELimitar(situacoesFase3, 3);
+        const comparacaoFonte = situacoesSorteadas.find((sit) => sit.comparacaoCustomizada)?.comparacaoCustomizada
+            || this.obterComparacaoPadraoFase3();
 
         this.estado.idProvaSelecionada = null;
 
         this.estado.questoesSorteadas = {
             1: this.embaralharELimitar(fase1, this.config.quantidadePorFase[1]),
             2: fase2Ordenada,
-            3: this.embaralharELimitar(fase3, this.config.quantidadePorFase[3]),
+            3: situacoesSorteadas.length ? [{ conteudo: situacoesSorteadas, comparacaoCustomizada: comparacaoFonte }] : [],
             4: this.embaralharELimitar(fase4, this.config.quantidadePorFase[4])
         };
 
@@ -187,29 +388,60 @@ export const ViewSimulado = {
         console.log('Simulado dinâmico sorteado por fases:', this.estado.questoesSorteadas);
     },
 
+    questaoFase2TemImagem(questao = {}) {
+        const audios = this.normalizarAudiosFase2(questao);
+        return audios.some((audio) => String(audio.imageUrl || '').trim());
+    },
+
     obterCandidatasFase2PorInteracao(interacao) {
         const fase2 = Array.isArray(this.dados.fase2) ? this.dados.fase2 : [];
         const numero = Number(interacao);
+        const comImagem = fase2.filter((q) => this.questaoFase2TemImagem(q));
+        const semImagem = fase2.filter((q) => !this.questaoFase2TemImagem(q));
 
-        let candidatas = fase2.filter((q) => Number(q.interacao) === numero);
-
-        /*
-            Regra mantida:
-            Interaction 4 e 5 continuam sendo as interações com imagem.
-            Então priorizamos questões que possuam imageUrl no problem.
-        */
-        if ([4, 5].includes(numero)) {
-            const comImagem = candidatas.filter((q) => {
-                const audios = this.normalizarAudiosFase2(q);
-                return audios.some((audio) => String(audio.imageUrl || '').trim());
-            });
-
-            if (comImagem.length) {
-                candidatas = comImagem;
-            }
+        if ([1, 2, 3].includes(numero)) {
+            const grupo123 = fase2.filter((q) => [1, 2, 3].includes(Number(q.interacao || 1)) && !this.questaoFase2TemImagem(q));
+            return grupo123.length ? grupo123 : (semImagem.length ? semImagem : fase2);
         }
 
-        return candidatas;
+        if ([4, 5].includes(numero)) {
+            const grupo45 = fase2.filter((q) => [4, 5].includes(Number(q.interacao || 4)) && this.questaoFase2TemImagem(q));
+            return grupo45.length ? grupo45 : (comImagem.length ? comImagem : fase2.filter((q) => [4, 5].includes(Number(q.interacao || 0))));
+        }
+
+        return fase2;
+    },
+
+    obterPoolSituacoesFase3() {
+        const fase3 = Array.isArray(this.dados.fase3) ? this.dados.fase3 : [];
+        const pool = [];
+
+        fase3.forEach((bloco, blocoIndex) => {
+            const conteudo = Array.isArray(bloco?.conteudo) ? bloco.conteudo : [];
+
+            conteudo.forEach((situacao, situacaoIndex) => {
+                pool.push({
+                    ...situacao,
+                    idProva: situacao.idProva || bloco.idProva || '',
+                    origemBlocoIndex: blocoIndex,
+                    origemSituacaoIndex: situacaoIndex,
+                    comparacaoCustomizada: bloco.comparacaoCustomizada || null
+                });
+            });
+        });
+
+        return pool;
+    },
+
+    obterComparacaoPadraoFase3() {
+        const fase3 = Array.isArray(this.dados.fase3) ? this.dados.fase3 : [];
+        const blocoComComparacao = fase3.find((bloco) => bloco?.comparacaoCustomizada);
+
+        return blocoComComparacao?.comparacaoCustomizada || {
+            perguntaHTML: 'Now, after listening to the 3 situations. Compare them in terms of severity, possible solutions or ways of prevention.',
+            guiaAjudaHTML: '',
+            modeloRespostaHTML: ''
+        };
     },
 
     obterAssinaturaQuestao(questao = {}) {
@@ -293,26 +525,31 @@ export const ViewSimulado = {
         }
 
         if (fase === 3) {
-            /*
-                Se estiver na Comparison, o refresh sorteia outro bloco inteiro
-                e mantém o usuário na Comparison.
-                Se estiver em uma Situation, sorteia outro bloco e mantém o
-                mesmo índice de situation, quando existir.
-            */
-            const lista = Array.isArray(this.dados.fase3) ? this.dados.fase3 : [];
-            const atual = this.estado.questoesSorteadas[3]?.[0];
-            const sorteada = this.sortearDiferente(lista, atual);
+            const pool = this.obterPoolSituacoesFase3();
+            const blocoAtual = this.estado.questoesSorteadas[3]?.[0];
 
-            if (sorteada) {
-                this.estado.questoesSorteadas[3] = [{ ...sorteada }];
-
-                const totalSituacoes = Array.isArray(sorteada.conteudo) ? sorteada.conteudo.length : 0;
-
-                if (!estaNaComparacao && totalSituacoes > 0) {
-                    this.estado.situacaoIndice = Math.min(indice, totalSituacoes - 1);
+            if (estaNaComparacao) {
+                const situacoes = this.embaralharELimitar(pool, 3);
+                if (situacoes.length) {
+                    this.estado.questoesSorteadas[3] = [{
+                        conteudo: situacoes,
+                        comparacaoCustomizada: situacoes.find((sit) => sit.comparacaoCustomizada)?.comparacaoCustomizada || this.obterComparacaoPadraoFase3()
+                    }];
+                    this.estado.naComparacao = true;
                 }
+                return;
+            }
 
-                this.estado.naComparacao = estaNaComparacao;
+            const atual = blocoAtual?.conteudo?.[indice];
+            const sorteada = this.sortearDiferente(pool, atual);
+
+            if (sorteada && blocoAtual?.conteudo) {
+                blocoAtual.conteudo[indice] = { ...sorteada };
+                if (sorteada.comparacaoCustomizada) {
+                    blocoAtual.comparacaoCustomizada = sorteada.comparacaoCustomizada;
+                }
+                this.estado.situacaoIndice = indice;
+                this.estado.naComparacao = false;
             }
 
             return;

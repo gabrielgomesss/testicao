@@ -1089,8 +1089,8 @@ export const ViewAdmin = {
                     </div>
                 </div>
                 ${this.renderizarSecaoBancoFase('fase1', 'Fase 1 — Aviation Topics', 'Perguntas abertas de rotina, experiência e preparação do piloto.', banco.fase1)}
-                ${this.renderizarSecaoBancoFase('fase2', 'Fase 2 — Interacting as a Pilot', 'Interações 1 a 5. As interações 4 e 5 continuam sendo as interações com imagem.', banco.fase2)}
-                ${this.renderizarSecaoBancoFase('fase3', 'Fase 3 — Unexpected Situations', 'Blocos com três situações e uma comparação final.', banco.fase3)}
+                ${this.renderizarSecaoBancoFase('fase2', 'Fase 2 — Interacting as a Pilot', 'Cadastro em dois grupos: itens que podem cair nas interactions 1 a 3 e itens com imagem obrigatória que podem cair nas interactions 4 e 5.', banco.fase2)}
+                ${this.renderizarSecaoBancoFase('fase3', 'Fase 3 — Unexpected Situations', 'Cadastro por situação individual. O simulado sorteia situações aleatórias de todo o banco, sem prender ao bloco original.', banco.fase3)}
                 ${this.renderizarSecaoBancoFase('fase4', 'Fase 4 — Picture Description', 'Photos com descrição, perguntas operacionais e statement.', banco.fase4)}
             `;
 
@@ -1117,6 +1117,30 @@ export const ViewAdmin = {
                 ['fase1', 'fase2', 'fase3', 'fase4'].forEach((fase) => {
                     const lista = Array.isArray(fases[fase]) ? fases[fase] : [];
 
+                    if (fase === 'fase3') {
+                        lista.forEach((bloco, index) => {
+                            const conteudo = Array.isArray(bloco?.conteudo) && bloco.conteudo.length
+                                ? bloco.conteudo
+                                : [bloco];
+
+                            conteudo.forEach((situacao, subIndex) => {
+                                banco[fase].push({
+                                    fase,
+                                    provaId: prova.id,
+                                    provaTitulo: prova.titulo || prova.id,
+                                    index,
+                                    subIndex,
+                                    item: {
+                                        ...situacao,
+                                        idProva: situacao?.idProva || bloco?.idProva || prova.id,
+                                        comparacaoCustomizada: bloco?.comparacaoCustomizada || situacao?.comparacaoCustomizada || null
+                                    }
+                                });
+                            });
+                        });
+                        return;
+                    }
+
                     lista.forEach((item, index) => {
                         banco[fase].push({
                             fase,
@@ -1135,17 +1159,11 @@ export const ViewAdmin = {
     },
 
     renderizarSecaoBancoFase(fase, titulo, subtitulo, itens = []) {
-        const corpo = fase === 'fase2'
-            ? this.renderizarFase2BancoPorInteraction(itens)
-            : (itens.length
-                ? itens.map((registro, ordem) => this.renderizarCardBancoQuestao(registro, ordem)).join('')
-                : `<p style="color:#94a3b8;font-size:13px;margin:0;">Nenhuma questão cadastrada nesta fase.</p>`);
+        const corpo = itens.length
+            ? itens.map((registro, ordem) => this.renderizarCardBancoQuestao(registro, ordem)).join('')
+            : `<p style="color:#94a3b8;font-size:13px;margin:0;">Nenhuma questão cadastrada nesta fase.</p>`;
 
-        const botaoTopo = fase === 'fase2'
-            ? `
-
-            `
-            : `
+        const botaoTopo = `
                 <button class="btn-banco-cadastrar" data-fase="${fase}" style="border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer;">
                     + Cadastrar ${this.obterNomeCurtoFase(fase)}
                 </button>
@@ -1216,7 +1234,7 @@ export const ViewAdmin = {
     },
 
     renderizarCardBancoQuestao(registro, ordem = 0) {
-        const { fase, provaId, provaTitulo, index, item } = registro;
+        const { fase, provaId, provaTitulo, index, subIndex, item } = registro;
         const titulo = this.obterTituloResumoQuestao(fase, item, ordem);
         const resumo = this.obterResumoQuestao(fase, item);
         const badges = this.obterBadgesQuestao(fase, item, provaTitulo);
@@ -1232,13 +1250,13 @@ export const ViewAdmin = {
                         <p style="margin:0;color:#475569;font-size:13px;line-height:1.5;">${resumo}</p>
                     </div>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
-                        <button class="btn-banco-visualizar" data-fase="${fase}" data-prova-id="${escaparHTML(provaId)}" data-index="${index}" style="border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">
+                        <button class="btn-banco-visualizar" data-fase="${fase}" data-prova-id="${escaparHTML(provaId)}" data-index="${index}" data-sub-index="${subIndex ?? ''}" style="border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">
                             Visualizar / editar
                         </button>
-                        <button class="btn-banco-duplicar" data-fase="${fase}" data-prova-id="${escaparHTML(provaId)}" data-index="${index}" style="border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">
+                        <button class="btn-banco-duplicar" data-fase="${fase}" data-prova-id="${escaparHTML(provaId)}" data-index="${index}" data-sub-index="${subIndex ?? ''}" style="border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">
                             Duplicar
                         </button>
-                        <button class="btn-banco-excluir" data-fase="${fase}" data-prova-id="${escaparHTML(provaId)}" data-index="${index}" style="border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">
+                        <button class="btn-banco-excluir" data-fase="${fase}" data-prova-id="${escaparHTML(provaId)}" data-index="${index}" data-sub-index="${subIndex ?? ''}" style="border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">
                             Excluir
                         </button>
                     </div>
@@ -1318,11 +1336,33 @@ export const ViewAdmin = {
         });
     },
 
+    isGrupoFase2Imagem(item = {}) {
+        const interacao = Number(item.interacao || 1);
+        if ([4, 5].includes(interacao)) return true;
+
+        const audios = Array.isArray(item.audios) ? item.audios : [];
+        return audios.some((audio) => String(audio.imageUrl || '').trim());
+    },
+
+    obterGrupoFase2Label(item = {}) {
+        return this.isGrupoFase2Imagem(item)
+            ? 'Grupo Interaction 4–5'
+            : 'Grupo Interaction 1–3';
+    },
+
+    obterComparacaoPadraoFase3Admin() {
+        return {
+            perguntaHTML: '<p>Compare as situações apresentadas.</p>',
+            guiaAjudaHTML: '<p>Guia de ajuda.</p>',
+            modeloRespostaHTML: '<p>Modelo de resposta da comparação.</p>'
+        };
+    },
+
     obterNomeCurtoFase(fase) {
         const mapa = {
             fase1: 'questão',
-            fase2: 'interaction',
-            fase3: 'bloco',
+            fase2: 'questão',
+            fase3: 'situação',
             fase4: 'photo'
         };
         return mapa[fase] || 'item';
@@ -1335,12 +1375,11 @@ export const ViewAdmin = {
 
         if (fase === 'fase2') {
             const titulo = item.scenario || item.cenario || item.tituloContexto || 'Interacting as a Pilot';
-            return `Interaction ${Number(item.interacao || ordem + 1)} — ${resumoRichText(titulo, 90, 'Interacting as a Pilot')}`;
+            return `${this.obterGrupoFase2Label(item)} — ${resumoRichText(titulo, 90, 'Interacting as a Pilot')}`;
         }
 
         if (fase === 'fase3') {
-            const primeira = item.conteudo?.[0]?.titulo || '';
-            return `Bloco ${ordem + 1} — ${resumoRichText(primeira, 90, `${(item.conteudo || []).length || 0} situações`)}`;
+            return `Situação ${ordem + 1} — ${resumoRichText(item.titulo, 90, 'Unexpected Situation')}`;
         }
 
         if (fase === 'fase4') {
@@ -1367,8 +1406,7 @@ export const ViewAdmin = {
         }
 
         if (fase === 'fase3') {
-            const primeira = item.conteudo?.[0]?.titulo || '';
-            return escaparHTML(resumoRichText(primeira, 180, 'Bloco com situações e comparação.'));
+            return escaparHTML(resumoRichText(item.transcricao || item.model || item.perguntaFinal || item.titulo, 180, 'Situação com áudio, transcrição, modelo e resposta.')); 
         }
 
         if (fase === 'fase4') {
@@ -1382,12 +1420,11 @@ export const ViewAdmin = {
         const origem = pill(provaTitulo || 'Banco', '#f1f5f9', '#475569');
 
         if (fase === 'fase2') {
-            const interacao = Number(item.interacao || 0);
-            const imagem = [4, 5].includes(interacao);
-            return `${pill(`Interaction ${interacao || '?'}`, imagem ? '#fef3c7' : '#e0f2fe', imagem ? '#92400e' : '#0369a1')} ${imagem ? pill('Imagem obrigatória', '#ffedd5', '#9a3412') : ''} ${origem}`;
+            const grupo45 = this.isGrupoFase2Imagem(item);
+            return `${pill(grupo45 ? 'Pode cair na Interaction 4 ou 5' : 'Pode cair na Interaction 1, 2 ou 3', grupo45 ? '#fef3c7' : '#e0f2fe', grupo45 ? '#92400e' : '#0369a1')} ${grupo45 ? pill('Imagem obrigatória', '#ffedd5', '#9a3412') : ''} ${origem}`;
         }
 
-        if (fase === 'fase3') return `${pill(`${(item.conteudo || []).length || 0} situações`, '#ffedd5', '#9a3412')} ${origem}`;
+        if (fase === 'fase3') return `${pill('Situação individual', '#ffedd5', '#9a3412')} ${origem}`;
         if (fase === 'fase4') return `${item.imageUrl ? pill('Imagem', '#dcfce7', '#166534') : pill('Sem imagem', '#fee2e2', '#991b1b')} ${origem}`;
 
         return `${pill('Aviation Topics')} ${origem}`;
@@ -1401,15 +1438,15 @@ export const ViewAdmin = {
         });
 
         container.querySelectorAll('.btn-banco-visualizar').forEach((btn) => {
-            btn.addEventListener('click', () => this.abrirItemBanco(btn.dataset.fase, btn.dataset.provaId, Number(btn.dataset.index)));
+            btn.addEventListener('click', () => this.abrirItemBanco(btn.dataset.fase, btn.dataset.provaId, Number(btn.dataset.index), btn.dataset.subIndex === '' ? -1 : Number(btn.dataset.subIndex)));
         });
 
         container.querySelectorAll('.btn-banco-duplicar').forEach((btn) => {
-            btn.addEventListener('click', () => this.duplicarItemBanco(btn.dataset.fase, btn.dataset.provaId, Number(btn.dataset.index)));
+            btn.addEventListener('click', () => this.duplicarItemBanco(btn.dataset.fase, btn.dataset.provaId, Number(btn.dataset.index), btn.dataset.subIndex === '' ? -1 : Number(btn.dataset.subIndex)));
         });
 
         container.querySelectorAll('.btn-banco-excluir').forEach((btn) => {
-            btn.addEventListener('click', () => this.excluirItemBanco(btn.dataset.fase, btn.dataset.provaId, Number(btn.dataset.index)));
+            btn.addEventListener('click', () => this.excluirItemBanco(btn.dataset.fase, btn.dataset.provaId, Number(btn.dataset.index), btn.dataset.subIndex === '' ? -1 : Number(btn.dataset.subIndex)));
         });
     },
 
@@ -1472,8 +1509,7 @@ export const ViewAdmin = {
             };
         } else if (fase === 'fase2') {
             const valorBase = Number(interacaoPredefinida || 0);
-            const interacaoEscolhida = valorBase || Number(prompt('Informe o número da Interaction (1 a 5):', '1') || 1);
-            const interacao = Math.min(Math.max(interacaoEscolhida, 1), 5);
+            const interacao = [4, 5].includes(valorBase) ? 4 : 1;
             novoItem = {
                 idProva: prova.id,
                 interacao,
@@ -1509,9 +1545,7 @@ export const ViewAdmin = {
             novoItem = {
                 idProva: prova.id,
                 conteudo: [
-                    { titulo: 'Nova situação 1', audioUrl: '', transcricao: '', model: '<p>Modelo de resposta.</p>', perguntaFinal: '', respostaFinal: '' },
-                    { titulo: 'Nova situação 2', audioUrl: '', transcricao: '', model: '<p>Modelo de resposta.</p>', perguntaFinal: '', respostaFinal: '' },
-                    { titulo: 'Nova situação 3', audioUrl: '', transcricao: '', model: '<p>Modelo de resposta.</p>', perguntaFinal: '', respostaFinal: '' }
+                    { titulo: 'Nova situação', audioUrl: '', transcricao: '', model: '<p>Modelo de resposta.</p>', perguntaFinal: '', respostaFinal: '' }
                 ],
                 comparacaoCustomizada: {
                     perguntaHTML: '<p>Compare as situações apresentadas.</p>',
@@ -1567,7 +1601,7 @@ export const ViewAdmin = {
         this.renderizarProvas();
     },
 
-    async abrirItemBanco(fase, provaId, index) {
+    async abrirItemBanco(fase, provaId, index, subIndex = -1) {
         const prova = await this.carregarProvaPorId(provaId);
 
         if (!prova?.fases?.[fase]?.[index]) {
@@ -1580,11 +1614,11 @@ export const ViewAdmin = {
 
         if (fase === 'fase1') this.abrirEditorFase1(index);
         else if (fase === 'fase2') this.abrirEditorFase2(index);
-        else if (fase === 'fase3') this.abrirEditorFase3(index);
+        else if (fase === 'fase3') this.abrirEditorFase3(index, subIndex);
         else if (fase === 'fase4') this.abrirEditorFase4(index);
     },
 
-    async duplicarItemBanco(fase, provaId, index) {
+    async duplicarItemBanco(fase, provaId, index, subIndex = -1) {
         const prova = await this.carregarProvaPorId(provaId);
 
         if (!prova?.fases?.[fase]?.[index]) {
@@ -1592,7 +1626,24 @@ export const ViewAdmin = {
             return;
         }
 
-        prova.fases[fase].splice(index + 1, 0, JSON.parse(JSON.stringify(prova.fases[fase][index])));
+        if (fase === 'fase3' && subIndex >= 0) {
+            const bloco = prova.fases.fase3[index];
+            const situacao = bloco?.conteudo?.[subIndex];
+
+            if (!situacao) {
+                alert('Situação não encontrada para duplicar.');
+                return;
+            }
+
+            prova.fases.fase3.splice(index + 1, 0, {
+                idProva: bloco.idProva || prova.id,
+                conteudo: [JSON.parse(JSON.stringify(situacao))],
+                comparacaoCustomizada: JSON.parse(JSON.stringify(bloco.comparacaoCustomizada || this.obterComparacaoPadraoFase3Admin()))
+            });
+        } else {
+            prova.fases[fase].splice(index + 1, 0, JSON.parse(JSON.stringify(prova.fases[fase][index])));
+        }
+
         prova.updatedAt = new Date().toISOString();
 
         await this.salvarProvaPreviewNoFirebase(prova);
@@ -1600,7 +1651,7 @@ export const ViewAdmin = {
         this.renderizarProvas();
     },
 
-    async excluirItemBanco(fase, provaId, index) {
+    async excluirItemBanco(fase, provaId, index, subIndex = -1) {
         const confirmar = confirm('Tem certeza que deseja excluir este item do banco de questões?');
         if (!confirmar) return;
 
@@ -1611,7 +1662,23 @@ export const ViewAdmin = {
             return;
         }
 
-        prova.fases[fase].splice(index, 1);
+        if (fase === 'fase3' && subIndex >= 0) {
+            const bloco = prova.fases.fase3[index];
+
+            if (!bloco?.conteudo?.[subIndex]) {
+                alert('Situação não encontrada para excluir.');
+                return;
+            }
+
+            bloco.conteudo.splice(subIndex, 1);
+
+            if (!bloco.conteudo.length) {
+                prova.fases.fase3.splice(index, 1);
+            }
+        } else {
+            prova.fases[fase].splice(index, 1);
+        }
+
         prova.updatedAt = new Date().toISOString();
 
         await this.salvarProvaPreviewNoFirebase(prova);
@@ -1800,7 +1867,7 @@ export const ViewAdmin = {
 
                 if (fase === 'fase1') this.abrirEditorFase1(index);
                 else if (fase === 'fase2') this.abrirEditorFase2(index);
-                else if (fase === 'fase3') this.abrirEditorFase3(index);
+                else if (fase === 'fase3') this.abrirEditorFase3(index, subIndex);
                 else if (fase === 'fase4') this.abrirEditorFase4(index);
             });
         });
@@ -2134,15 +2201,15 @@ export const ViewAdmin = {
                     { fase: 'fase3', index }
                 );
             }).join('')
-            : '<p style="color:#94a3b8;font-size:13px;">Nenhum bloco cadastrado na Fase 3.</p>';
+            : '<p style="color:#94a3b8;font-size:13px;">Nenhuma situação cadastrada na Fase 3.</p>';
 
         return this.renderizarSecaoCMS(
             'Fase 3 — Unexpected Situations',
-            'Bloco com três comunicações e uma comparação final.',
+            'Cadastro em bloco único de situações. O simulado sorteia três situações de forma aleatória para montar a Fase 3.',
             conteudo,
             `
                 <button class="btn-cms-adicionar" data-fase="fase3" style="background:#06b6d4;color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:800;cursor:pointer;">
-                    + Adicionar bloco
+                    + Adicionar situação
                 </button>
             `
         );
@@ -2707,7 +2774,7 @@ export const ViewAdmin = {
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;">
                         <div>
                             <h2 style="margin:0;font-size:20px;color:#0f172a;">Editar Interaction — Fase 2</h2>
-                            <p style="margin:4px 0 0 0;color:#64748b;font-size:13px;">Sequência oficial: Scenario → Audio 1 → Problem → Audio 2 → What did the controller say?</p>
+                            <p style="margin:4px 0 0 0;color:#64748b;font-size:13px;">Cadastro único da Fase 2. O grupo define se a questão poderá cair nas Interactions 1–3 ou nas Interactions 4–5 com imagem obrigatória.</p>
                         </div>
                         <button id="btn-fechar-editor-fase2" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:700;">Fechar</button>
                     </div>
@@ -2718,9 +2785,10 @@ export const ViewAdmin = {
                             <input id="edit-fase2-idprova" value="${item.idProva || ''}" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:10px;">
                         </div>
                         <div>
-                            <label style="display:block;font-size:12px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Número da Interaction</label>
+                            <label style="display:block;font-size:12px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Grupo de Sorteio</label>
                             <select id="edit-fase2-interacao" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;">
-                                ${[1,2,3,4,5].map(n => `<option value="${n}" ${Number(item.interacao) === n ? 'selected' : ''}>Interaction ${n}</option>`).join('')}
+                                <option value="1" ${[1,2,3].includes(Number(item.interacao)) ? 'selected' : ''}>Pode cair nas Interactions 1, 2 ou 3</option>
+                                <option value="4" ${[4,5].includes(Number(item.interacao)) ? 'selected' : ''}>Pode cair nas Interactions 4 ou 5 — imagem obrigatória</option>
                             </select>
                         </div>
                     </div>
@@ -2756,11 +2824,11 @@ export const ViewAdmin = {
                         <h3 style="margin:0 0 12px 0;font-size:16px;color:#9a3412;">${permiteImagem ? '3. Problem Image → 4. Problem → 5. Model Answer' : '3. Problem → 4. Model Answer'}</h3>
 
                         <div style="padding:10px;border-radius:10px;background:#fff;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.5;margin-bottom:12px;">
-                            A imagem do Problem só será exibida no simulado nas Interactions 4 e 5.
+                            A imagem do Problem será usada apenas no grupo que pode cair nas Interactions 4 e 5.
                         </div>
 
                         <label style="display:block;font-size:12px;font-weight:800;color:#9a3412;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Problem Image URL</label>
-                        <input id="edit-fase2-problem-image" value="${audioProblem.imageUrl || ''}" placeholder="Somente para interactions 4 e 5" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #fed7aa;border-radius:10px;margin-bottom:8px;">
+                        <input id="edit-fase2-problem-image" value="${audioProblem.imageUrl || ''}" placeholder="Somente para o grupo Interaction 4 ou 5" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #fed7aa;border-radius:10px;margin-bottom:8px;">
                         <input type="file" id="edit-fase2-problem-image-file" accept="image/*" style="width:100%;box-sizing:border-box;padding:10px;background:#fff;border:1px dashed #fb923c;border-radius:10px;margin-bottom:12px;">
 
                         <label style="display:block;font-size:12px;font-weight:800;color:#9a3412;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Problem</label>
@@ -3016,23 +3084,7 @@ export const ViewAdmin = {
             idProva: prova.id,
             conteudo: [
                 {
-                    titulo: 'Nova situação 1',
-                    audioUrl: '',
-                    transcricao: '',
-                    model: '<p>Modelo de resposta.</p>',
-                    perguntaFinal: '',
-                    respostaFinal: ''
-                },
-                {
-                    titulo: 'Nova situação 2',
-                    audioUrl: '',
-                    transcricao: '',
-                    model: '<p>Modelo de resposta.</p>',
-                    perguntaFinal: '',
-                    respostaFinal: ''
-                },
-                {
-                    titulo: 'Nova situação 3',
+                    titulo: 'Nova situação',
                     audioUrl: '',
                     transcricao: '',
                     model: '<p>Modelo de resposta.</p>',
@@ -3113,18 +3165,23 @@ export const ViewAdmin = {
         }
     },
 
-    abrirEditorFase3(index) {
+    abrirEditorFase3(index, subIndex = -1) {
         const prova = this.estado.provaEmPreview;
         const item = prova?.fases?.fase3?.[index];
 
         if (!item) {
-            alert('Bloco da Fase 3 não encontrado.');
+            alert('Situação da Fase 3 não encontrada.');
             return;
         }
 
         document.getElementById('editor-fase3-modal')?.remove();
 
-        const situacoesHTML = (item.conteudo || []).map((sit, sitIndex) => `
+        const indiceSituacao = subIndex >= 0 ? subIndex : 0;
+        const situacaoSelecionada = Array.isArray(item.conteudo)
+            ? (item.conteudo[indiceSituacao] || item.conteudo[0] || {})
+            : item;
+
+        const situacoesHTML = [situacaoSelecionada].map((sit, sitIndex) => `
             <section class="fase3-situacao-editor" data-sit-index="${sitIndex}" style="border:1px solid #e2e8f0;border-radius:14px;padding:14px;margin-bottom:14px;background:#f8fafc;">
                 <h3 style="margin:0 0 12px 0;font-size:16px;color:#0f172a;">Situação ${sitIndex + 1}</h3>
 
@@ -3156,8 +3213,8 @@ export const ViewAdmin = {
                 <div style="width:100%;max-width:920px;max-height:92vh;overflow:auto;background:#fff;color:#0f172a;border-radius:16px;padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.35);box-sizing:border-box;">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;">
                         <div>
-                            <h2 style="margin:0;font-size:20px;color:#0f172a;">Editar Bloco — Fase 3</h2>
-                            <p style="margin:4px 0 0 0;color:#64748b;font-size:13px;">Bloco ${index + 1} de ${prova.titulo || prova.id}</p>
+                            <h2 style="margin:0;font-size:20px;color:#0f172a;">Editar Situação — Fase 3</h2>
+                            <p style="margin:4px 0 0 0;color:#64748b;font-size:13px;">Situação individual de ${prova.titulo || prova.id}</p>
                         </div>
                         <button id="btn-fechar-editor-fase3" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:700;">Fechar</button>
                     </div>
@@ -3182,7 +3239,7 @@ export const ViewAdmin = {
 
                     <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:18px;">
                         <button id="btn-cancelar-edicao-fase3" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;cursor:pointer;font-weight:800;">Cancelar</button>
-                        <button id="btn-salvar-edicao-fase3" style="background:#06b6d4;color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:800;">Salvar bloco</button>
+                        <button id="btn-salvar-edicao-fase3" style="background:#06b6d4;color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer;font-weight:800;">Salvar situação</button>
                     </div>
                 </div>
             </div>
@@ -3194,10 +3251,10 @@ export const ViewAdmin = {
         const fechar = () => document.getElementById('editor-fase3-modal')?.remove();
         document.getElementById('btn-fechar-editor-fase3').onclick = fechar;
         document.getElementById('btn-cancelar-edicao-fase3').onclick = fechar;
-        document.getElementById('btn-salvar-edicao-fase3').onclick = () => this.salvarEdicaoFase3(index);
+        document.getElementById('btn-salvar-edicao-fase3').onclick = () => this.salvarEdicaoFase3(index, indiceSituacao);
     },
 
-    async salvarEdicaoFase3(index) {
+    async salvarEdicaoFase3(index, subIndex = 0) {
         const prova = this.estado.provaEmPreview;
         const item = prova?.fases?.fase3?.[index];
 
@@ -3243,7 +3300,12 @@ export const ViewAdmin = {
                 situacoes.push(sit);
             }
 
-            item.conteudo = situacoes;
+            if (Array.isArray(item.conteudo)) {
+                item.conteudo[subIndex] = situacoes[0];
+            } else {
+                item.conteudo = situacoes;
+            }
+
             item.comparacaoCustomizada = {
                 perguntaHTML: this.normalizarRichText(document.getElementById('edit-fase3-comp-pergunta')?.innerHTML || ''),
                 guiaAjudaHTML: this.normalizarRichText(document.getElementById('edit-fase3-comp-guia')?.innerHTML || ''),
@@ -3254,7 +3316,7 @@ export const ViewAdmin = {
 
             await this.salvarProvaPreviewNoFirebase(prova);
 
-            alert('Bloco da Fase 3 atualizado com sucesso.');
+            alert('Situação da Fase 3 atualizada com sucesso.');
             document.getElementById('editor-fase3-modal')?.remove();
             this.fecharModalProva();
             this.renderizarProvas();
@@ -3262,7 +3324,7 @@ export const ViewAdmin = {
         } catch (erro) {
             if (btnSalvar) {
                 btnSalvar.disabled = false;
-                btnSalvar.innerText = 'Salvar bloco';
+                btnSalvar.innerText = 'Salvar situação';
             }
 
             console.error('Erro ao salvar Fase 3:', erro);
