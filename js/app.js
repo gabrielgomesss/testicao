@@ -6,6 +6,9 @@ import { ViewCadastro } from './views/view-cadastro.js';
 import { ViewAdmin } from './views/view-admin.js';
 import { ViewAluno } from './views/view-aluno.js';
 import { ViewSimulado } from './views/view-simulado.js';
+import { ViewAulas } from './views/view-aulas.js';
+import { ViewAdminAulas } from './views/view-admin-aulas.js';
+import { AlunoAulasCard } from './views/aluno-aulas-card.js';
 
 // 2. Importação do motor de autenticação e sincronização
 import { AuthModule } from './modules/auth.js';
@@ -142,6 +145,8 @@ class AppOrchestrator {
         ViewAdmin.init({
             onLogout: () => AuthModule.deslogar()
         });
+
+        ViewAdminAulas.mount();
     }
 
     navegarParaDashboardAluno() {
@@ -150,6 +155,10 @@ class AppOrchestrator {
         ViewAluno.init(this.usuarioLogado, {
             onLogout: () => AuthModule.deslogar(),
             onIniciarSimulado: () => this.navegarParaSimulado()
+        });
+
+        AlunoAulasCard.mount({
+            onAbrirAulas: () => this.navegarParaAulas()
         });
 
         this.sincronizarDadosDoAluno(false);
@@ -226,6 +235,18 @@ class AppOrchestrator {
         document.getElementById('btn-voltar-login')?.addEventListener('click', async () => {
             await AuthModule.deslogar();
             this.navegarParaLogin();
+        });
+    }
+
+    navegarParaAulas() {
+        if (!this.usuarioLogado || this.usuarioLogado.perfil !== 'aluno') return;
+
+        this.appContainer.innerHTML = ViewAulas.template;
+        ViewAulas.init(this.usuarioLogado, {
+            onVoltar: () => {
+                ViewAulas.destroy?.();
+                this.navegarParaDashboardAluno();
+            }
         });
     }
 

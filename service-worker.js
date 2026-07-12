@@ -1,6 +1,7 @@
-const APP_VERSION = '2026.07.10.002';
+const APP_VERSION = '2026.07.12.OFFLINE.FIX.001';
 const STATIC_CACHE_NAME = `chiteroicao-static-${APP_VERSION}`;
 const DYNAMIC_CACHE_NAME = 'chiteroicao-dynamic-v5';
+const AULAS_CACHE_NAME = 'chiteroicao-aulas-offline-v1';
 const OFFLINE_FALLBACK = './index.html';
 
 const ASSETS_TO_CACHE = [
@@ -17,12 +18,30 @@ const ASSETS_TO_CACHE = [
   './js/modules/auth.js',
   './js/modules/simulador.js',
   './js/modules/sync-service.js',
+  './js/modules/aulas-service.js',
+  './js/modules/aulas-offline.js',
+  './js/modules/video-encoder.js',
 
   './js/views/view-admin.js',
   './js/views/view-aluno.js',
   './js/views/view-cadastro.js',
   './js/views/view-login.js',
   './js/views/view-simulado.js',
+  './js/views/view-aulas.js',
+  './js/views/view-admin-aulas.js',
+  './js/views/aluno-aulas-card.js',
+
+  './vendor/ffmpeg/ffmpeg/index.js',
+  './vendor/ffmpeg/ffmpeg/classes.js',
+  './vendor/ffmpeg/ffmpeg/const.js',
+  './vendor/ffmpeg/ffmpeg/errors.js',
+  './vendor/ffmpeg/ffmpeg/types.js',
+  './vendor/ffmpeg/ffmpeg/utils.js',
+  './vendor/ffmpeg/ffmpeg/worker.js',
+  './vendor/ffmpeg/util/index.js',
+  './vendor/ffmpeg/util/const.js',
+  './vendor/ffmpeg/util/errors.js',
+  './vendor/ffmpeg/util/types.js',
 
   './assets/imagens/Logotipo.avif',
   './assets/imagens/Logotipo.jpg',
@@ -299,7 +318,7 @@ async function responderRangeDoCache(request) {
     headers.set('Content-Length', String(chunk.byteLength));
 
     if (!headers.get('Content-Type')) {
-      headers.set('Content-Type', 'audio/mpeg');
+      headers.set('Content-Type', request.destination === 'video' ? 'video/mp4' : 'audio/mpeg');
     }
 
     return new Response(chunk, {
@@ -339,6 +358,179 @@ async function responderCodigoNetworkFirst(request) {
   }
 }
 
+function isRequestVideo(request) {
+  try {
+    const url = new URL(request.url);
+    const caminhoDecodificado = decodeURIComponent(`${url.pathname}${url.search}`);
+    return request.destination === 'video'
+      || /\.(mp4|webm|mov|m4v)(?:$|[?&#])/i.test(caminhoDecodificado);
+  } catch {
+    return request.destination === 'video';
+  }
+}
+
+async function encontrarAulaOffline(requestOuUrl) {
+  const requestUrl = typeof requestOuUrl === 'string' ? requestOuUrl : requestOuUrl.url;
+  const cache = await caches.open(AULAS_CACHE_NAME);
+
+  let resposta = await cache.match(requestUrl, {
+    ignoreVary: true,
+    ignoreSearch: false
+  });
+
+  if (resposta) return resposta;
+
+  try {
+    const alvo = new URL(requestUrl);
+    const requests = await cache.keys();
+
+    for (const cachedRequest of requests) {
+      try {
+        const atual = new URL(cachedRequest.url);
+        if (atual.origin === alvo.origin && atual.pathname === alvo.pathname) {
+          resposta = await cache.match(cachedRequest, { ignoreVary: true });
+          if (resposta) return resposta;
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return null;
+}
+
+async function responderVideo(request) {
+  /*
+    Reprodução ONLINE: passa integralmente para a rede.
+
+    Não consulta Cache Storage, não reconstrói respostas 206 e não transforma
+    o arquivo em ArrayBuffer. A reprodução offline da aplicação usa uma Blob URL
+    criada pela ViewAulas, portanto não depende deste handler.
+  */
+  try {
+    return await fetch(request);
+  } catch (erro) {
+    console.warn('SW: vídeo online indisponível.', erro);
+    return new Response('Aula indisponível sem conexão. Ative o modo offline desta aula antes de desconectar.', {
+      status: 503,
+      statusText: 'Offline'
+    });
+  }
+}
+
+async function limparVideosDoCacheDinamico() {
+  const cache = await caches.open(DYNAMIC_CACHE_NAME);
+  const requests = await cache.keys();
+
+  await Promise.all(requests.map(async (request) => {
+    try {
+      const url = new URL(request.url);
+      const caminho = decodeURIComponent(`${url.pathname}${url.search}`);
+      if (/\.(mp4|webm|mov|m4v)(?:$|[?&#])/i.test(caminho)) {
+        await cache.delete(request);
+      }
+    } catch {}
+  }));
+}
+
+async function baixarAulaOffline({ aulaId, url, port }) {
+  if (!url) throw new Error('URL da aula não informada.');
+
+  const cache = await caches.open(AULAS_CACHE_NAME);
+  const respostaExistente = await cache.match(url, { ignoreSearch: false });
+  if (respostaExistente) {
+    port?.postMessage?.({ sucesso: true, aulaId, baixada: true, jaExistia: true });
+    return;
+  }
+
+  const response = await fetch(new Request(url, {
+    method: 'GET',
+    credentials: 'omit',
+    mode: 'cors',
+    cache: 'no-store'
+  }));
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Falha ao baixar o vídeo (${response.status || 'sem resposta'}).`);
+  }
+
+  const totalBytes = Number(response.headers.get('content-length') || 0);
+  let bytesRecebidos = 0;
+  let ultimoProgresso = -1;
+
+  const transform = new TransformStream({
+    transform(chunk, controller) {
+      bytesRecebidos += chunk.byteLength || 0;
+      const progresso = totalBytes > 0
+        ? Math.min(99, Math.round((bytesRecebidos / totalBytes) * 100))
+        : 0;
+
+      if (progresso !== ultimoProgresso) {
+        ultimoProgresso = progresso;
+        port?.postMessage?.({ aulaId, progresso, bytesRecebidos, totalBytes });
+      }
+      controller.enqueue(chunk);
+    }
+  });
+
+  const headers = new Headers(response.headers);
+  if (!headers.get('Content-Type')) headers.set('Content-Type', 'video/mp4');
+  headers.set('X-Chitero-Aula-Id', String(aulaId || ''));
+
+  const respostaCache = new Response(response.body.pipeThrough(transform), {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+
+  await cache.put(url, respostaCache);
+  port?.postMessage?.({ aulaId, progresso: 100, bytesRecebidos, totalBytes });
+  port?.postMessage?.({ sucesso: true, aulaId, baixada: true, tamanhoBytes: bytesRecebidos || totalBytes });
+}
+
+async function removerAulaOffline({ aulaId, url, port }) {
+  const cache = await caches.open(AULAS_CACHE_NAME);
+  let removida = false;
+
+  if (url) removida = await cache.delete(url, { ignoreSearch: false });
+
+  if (!removida && url) {
+    const alvo = new URL(url);
+    const keys = await cache.keys();
+    for (const request of keys) {
+      try {
+        const atual = new URL(request.url);
+        if (atual.origin === alvo.origin && atual.pathname === alvo.pathname) {
+          removida = await cache.delete(request);
+          break;
+        }
+      } catch {}
+    }
+  }
+
+  port?.postMessage?.({ sucesso: true, aulaId, removida });
+}
+
+async function verificarAulaOffline({ aulaId, url, port }) {
+  const cache = await caches.open(AULAS_CACHE_NAME);
+  let resposta = url ? await cache.match(url, { ignoreSearch: false }) : null;
+
+  if (!resposta && url) {
+    const alvo = new URL(url);
+    const keys = await cache.keys();
+    const correspondente = keys.find((request) => {
+      try {
+        const atual = new URL(request.url);
+        return atual.origin === alvo.origin && atual.pathname === alvo.pathname;
+      } catch {
+        return false;
+      }
+    });
+    if (correspondente) resposta = await cache.match(correspondente);
+  }
+
+  port?.postMessage?.({ sucesso: true, aulaId, baixada: Boolean(resposta) });
+}
+
 async function responderComCachePrimeiro(request) {
   if (request.headers.has('range')) {
     return responderRangeDoCache(request);
@@ -366,7 +558,7 @@ async function responderComCachePrimeiro(request) {
     const networkResponse = await fetch(fetchRequest);
     const respostaOK = networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque');
 
-    if (respostaOK && (isSameOrigin || isFirebaseStorage)) {
+    if (respostaOK && (isSameOrigin || isFirebaseStorage) && !isRequestVideo(request)) {
       const cache = await caches.open(DYNAMIC_CACHE_NAME);
       await cache.put(request.url, networkResponse.clone());
     }
@@ -399,6 +591,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     await limparCachesAntigos();
+    await limparVideosDoCacheDinamico();
     await self.clients.claim();
     await notificarClientesAtualizacao();
   })());
@@ -415,11 +608,42 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (isRequestVideo(event.request)) {
+    event.respondWith(responderVideo(event.request));
+    return;
+  }
+
   event.respondWith(responderComCachePrimeiro(event.request));
 });
 
 self.addEventListener('message', (event) => {
   const data = event.data || {};
+  const port = event.ports?.[0] || null;
+
+  if (data.type === 'DOWNLOAD_AULA_OFFLINE') {
+    event.waitUntil(
+      baixarAulaOffline({ aulaId: data.aulaId, url: data.url, port })
+        .catch((erro) => port?.postMessage?.({ sucesso: false, aulaId: data.aulaId, erro: erro.message || String(erro) }))
+    );
+    return;
+  }
+
+  if (data.type === 'REMOVE_AULA_OFFLINE') {
+    event.waitUntil(
+      removerAulaOffline({ aulaId: data.aulaId, url: data.url, port })
+        .catch((erro) => port?.postMessage?.({ sucesso: false, aulaId: data.aulaId, erro: erro.message || String(erro) }))
+    );
+    return;
+  }
+
+  if (data.type === 'CHECK_AULA_OFFLINE') {
+    event.waitUntil(
+      verificarAulaOffline({ aulaId: data.aulaId, url: data.url, port })
+        .catch((erro) => port?.postMessage?.({ sucesso: false, aulaId: data.aulaId, erro: erro.message || String(erro) }))
+    );
+    return;
+  }
+
 
   if (data.type === 'CACHEAR_PROVAS_DINAMICAS') {
     const urls = Array.isArray(data.urls) ? urlsUnicas(data.urls) : [];

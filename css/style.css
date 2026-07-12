@@ -808,3 +808,293 @@ body {
                         font-size: 16px !important;
                     }
                 }
+/* =========================================================
+   MÓDULO DE AULAS — ADMIN, ALUNO, PLAYER E OFFLINE
+   ========================================================= */
+.dashboard-cards-wrapper {
+    width: 100%;
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+    align-items: stretch;
+}
+.dashboard-cards-wrapper .test-card-premium { max-width: none !important; }
+
+.aulas-dashboard-card { min-height: 510px; }
+.aulas-dashboard-visual {
+    position: relative;
+    min-height: 260px;
+    background:
+        radial-gradient(circle at 50% 35%, rgba(94,187,222,.34), transparent 35%),
+        linear-gradient(145deg, #07111f, #020617 72%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.aulas-dashboard-play {
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #5EBBDE;
+    color: #fff;
+    font-size: 28px;
+    padding-left: 5px;
+    box-shadow: 0 16px 45px rgba(94,187,222,.35);
+}
+.aulas-dashboard-badge {
+    position: absolute;
+    bottom: 0;
+    background: #fff;
+    color: #111;
+    padding: 8px 24px;
+    border-radius: 20px 20px 0 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.aulas-dashboard-body {
+    background: #fff;
+    color: #111;
+    padding: 25px 24px 30px;
+    text-align: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.aulas-dashboard-body h3 {
+    margin: 0 0 15px;
+    font-family: Georgia, 'Times New Roman', serif;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 20px;
+    font-weight: 500;
+}
+.aulas-dashboard-body ul { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 10px; }
+.aulas-dashboard-body li { font-size: 13px; color: #666; }
+#aulas-dashboard-card, #btn-abrir-aulas {}
+#btn-abrir-aulas {
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    background: #5EBBDE;
+    color: #fff;
+    padding: 15px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.aulas-page {
+    min-height: 100vh;
+    background: radial-gradient(circle at top center, rgba(94,187,222,.13), transparent 30%), #000;
+    color: #fff;
+}
+.aulas-page-header {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 20px 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 22px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+}
+.aulas-page-header h1 { margin: 4px 0 7px; font-size: clamp(28px, 5vw, 44px); }
+.aulas-page-header p { margin: 0; color: #94a3b8; line-height: 1.5; }
+.aulas-eyebrow { color: #5EBBDE; font-size: 10px; font-weight: 900; letter-spacing: 2px; }
+.aulas-back-btn, .aulas-icon-btn {
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.06);
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px 13px;
+    cursor: pointer;
+    font-weight: 800;
+}
+.aulas-page-content { max-width: 1080px; margin: 0 auto; padding: 22px 20px 60px; }
+.aulas-storage-info {
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 14px;
+    padding: 12px 14px;
+    color: #cbd5e1;
+    font-size: 12px;
+    margin-bottom: 18px;
+}
+.aulas-modulo { margin-top: 28px; }
+.aulas-modulo-header { margin-bottom: 12px; }
+.aulas-modulo-header h2 { margin: 4px 0 0; font-size: 21px; }
+.aulas-modulo-grid { display: grid; gap: 14px; }
+.aula-card {
+    display: grid;
+    grid-template-columns: 66px 1fr;
+    background: #fff;
+    color: #0f172a;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 18px 45px rgba(0,0,0,.25);
+}
+.aula-card-index {
+    display: grid;
+    place-items: center;
+    background: #07111f;
+    color: #5EBBDE;
+    font-size: 20px;
+    font-weight: 900;
+}
+.aula-card-content { padding: 18px; }
+.aula-card h3 { margin: 0 0 7px; font-size: 17px; }
+.aula-card p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.55; }
+.aula-card-meta { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; color: #475569; font-size: 11px; font-weight: 800; }
+.aula-card-meta span { background: #f1f5f9; border-radius: 999px; padding: 6px 9px; }
+.aula-card-actions { margin-top: 16px; display: grid; grid-template-columns: 170px 1fr; gap: 12px; align-items: center; }
+.aula-offline-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+.aula-offline-control > span { display: grid; gap: 2px; }
+.aula-offline-control strong { font-size: 12px; }
+.aula-offline-control small { color: #64748b; font-size: 10px; }
+.aula-offline-control input { position: absolute; opacity: 0; pointer-events: none; }
+.aula-offline-control i {
+    width: 42px;
+    height: 24px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #cbd5e1;
+    position: relative;
+    transition: .2s;
+}
+.aula-offline-control i::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    top: 3px;
+    left: 3px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 5px rgba(0,0,0,.2);
+    transition: .2s;
+}
+.aula-offline-control input:checked + i { background: #22c55e; }
+.aula-offline-control input:checked + i::after { transform: translateX(18px); }
+.aula-offline-control input:disabled + i { opacity: .55; }
+.aula-download-progress { margin-top: 12px; }
+.aula-download-progress-row { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: #475569; margin-bottom: 5px; }
+.aula-download-progress-track { height: 7px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+.aula-download-progress-track > div { width: 0; height: 100%; background: #5EBBDE; transition: width .2s; }
+
+.aulas-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-weight: 800;
+    cursor: pointer;
+    min-height: 40px;
+}
+.aulas-btn:disabled { opacity: .55; cursor: wait; }
+.aulas-btn-primary { background: #5EBBDE; color: #fff; }
+.aulas-btn-secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+.aulas-btn-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.aulas-feedback { border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 13px; }
+.aulas-feedback-info { background: #e0f2fe; color: #0369a1; }
+.aulas-feedback-sucesso { background: #dcfce7; color: #166534; }
+.aulas-feedback-erro { background: #fee2e2; color: #991b1b; }
+.aulas-loading, .aulas-empty {
+    padding: 22px;
+    border-radius: 14px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.1);
+    color: #cbd5e1;
+    text-align: center;
+}
+
+.aulas-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0,0,0,.82);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+}
+.aulas-modal-card {
+    width: min(100%, 960px);
+    max-height: calc(100vh - 36px);
+    overflow: auto;
+    border-radius: 20px;
+    background: #fff;
+    color: #0f172a;
+    padding: 18px;
+    box-shadow: 0 30px 90px rgba(0,0,0,.55);
+}
+.aulas-modal-header { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 15px; }
+.aulas-modal-header h2 { margin: 4px 0; }
+.aulas-modal-header p { margin: 0; color: #64748b; font-size: 12px; }
+.aulas-modal-card .aulas-icon-btn { color: #334155; border-color: #cbd5e1; background: #f8fafc; }
+.aulas-player-card video { display: block; width: 100%; max-height: 72vh; background: #000; border-radius: 14px; }
+
+.admin-aulas-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.admin-aulas-header h2 { margin: 0 0 5px; color: #fff; }
+.admin-aulas-header p { margin: 0; color: #94a3b8; font-size: 13px; }
+.admin-aulas-grid { display: grid; gap: 14px; }
+.admin-aula-card { background: #fff; color: #0f172a; border-radius: 18px; padding: 18px; box-shadow: 0 18px 45px rgba(15,23,42,.14); }
+.admin-aula-card-top { display: flex; justify-content: space-between; gap: 14px; }
+.admin-aula-card h3 { margin: 9px 0 6px; }
+.admin-aula-card p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.5; }
+.admin-aula-status-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.aulas-pill { display: inline-flex; border-radius: 999px; padding: 5px 9px; background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 900; }
+.aulas-pill-success { background: #dcfce7; color: #166534; }
+.aulas-pill-muted { background: #f1f5f9; color: #64748b; }
+.admin-aula-order { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: #0f172a; color: #fff; font-weight: 900; }
+.admin-aula-meta { margin-top: 13px; display: flex; gap: 8px; font-size: 11px; color: #475569; }
+.admin-aula-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.admin-aula-form { display: grid; gap: 14px; }
+.admin-aula-form label { display: grid; gap: 6px; color: #334155; font-size: 12px; font-weight: 800; }
+.admin-aula-form input, .admin-aula-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 11px 12px;
+    color: #0f172a;
+    background: #fff;
+    font: inherit;
+}
+.admin-aula-fields-grid { display: grid; grid-template-columns: 2fr 1.2fr .6fr; gap: 12px; }
+.admin-aula-checkbox-label { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px !important; align-self: end; min-height: 42px; }
+.admin-aula-checkbox-label input { width: auto; }
+.admin-video-box { border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; background: #f8fafc; }
+.admin-video-info { margin-top: 8px; color: #64748b; font-size: 11px; }
+.admin-encoder-check { margin-top: 12px; align-self: auto; }
+.admin-processo-wrap { margin-top: 13px; }
+.admin-processo-label-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #475569; }
+.admin-processo-bar { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.admin-processo-bar > div { width: 0; height: 100%; background: #5EBBDE; transition: width .2s; }
+.admin-processo-log { margin-top: 7px; color: #64748b; font: 10px/1.4 ui-monospace, monospace; max-height: 48px; overflow: hidden; }
+.aulas-modal-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+@media (max-width: 760px) {
+    .dashboard-cards-wrapper { grid-template-columns: 1fr; max-width: 350px; }
+    .aula-card { grid-template-columns: 48px 1fr; }
+    .aula-card-actions { grid-template-columns: 1fr; }
+    .admin-aula-fields-grid { grid-template-columns: 1fr; }
+    .admin-aula-checkbox-label { align-self: auto; }
+    .aulas-page-header { flex-direction: column; }
+    .aulas-back-btn { align-self: flex-start; }
+}
